@@ -17,12 +17,17 @@ Sfx :: enum i32 {
 	Quit,
 	Denied,
 	Buy,
+	Rats,
+	Cat,
+	Build,
 }
 
 sound_for :: proc(events: bit_set[Event]) -> Sfx {
 	switch {
 	case .Quit in events:
 		return .Quit
+	case .Rats in events:
+		return .Rats
 	case .Hungry in events:
 		return .Hungry
 	case .Turned in events:
@@ -33,6 +38,10 @@ sound_for :: proc(events: bit_set[Event]) -> Sfx {
 		return .Sell
 	case .Seeded in events:
 		return .Seed
+	case .Built in events:
+		return .Build
+	case .Cat in events:
+		return .Cat
 	case .Bought in events:
 		return .Buy
 	case .Hired in events:

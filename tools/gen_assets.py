@@ -28,6 +28,8 @@ PICKS = [
     ('Barn',        9, 24),   # little barn: the barn panel
     ('Scarecrow',   4, 24),   # the title
     ('Wild',        15, 5),   # grass tufts: land not yet bought
+    ('Cat',         1, 14),   # grey cat: keeps the rats down
+    ('Rat',         3, 14),   # grey rat
 ]
 
 def tile(col, row):
@@ -102,7 +104,15 @@ d += ["}", "",
       f"FARMER_PATIENCE :: {farmer['patience']} // hungry turns a farmer puts up with; one more and they quit",
       f"START_MONEY :: {params['start_money']}",
       f"LAND_PRICE :: {params['land_price']} // the first square bought",
-      f"LAND_GROWTH_PERCENT :: {params['land_growth_percent']} // each square bought costs this much more than the last", "",
+      f"LAND_GROWTH_PERCENT :: {params['land_growth_percent']} // each square bought costs this much more than the last",
+      f"BARN_CAPACITY :: {params['barn_capacity']} // crops the barn holds at the start",
+      f"BARN_STEP :: {params['barn_step']} // crops each expansion adds",
+      f"BARN_PRICE :: {params['barn_price']} // the first expansion",
+      f"BARN_GROWTH_PERCENT :: {params['barn_growth_percent']} // each expansion costs this much more than the last",
+      f"RAT_BASE_PERCENT :: {params['rat_base_percent']} // chance each turn that rats eat half the barn",
+      f"RAT_STEP_PERCENT :: {params['rat_step_percent']} // more chance for each expansion",
+      f"CAT_COST :: {types['cat']['cost']}",
+      f"CAT_DETER_PERCENT :: {types['cat']['deter_percent']} // less chance for each cat", "",
       "Terrain :: enum u8 {", *[f"\t{t.capitalize()}," for t in fmap['terrains']], "}", "",
       "// The field at the start, from the Anvil map, row by row.",
       "FIELD_TERRAIN := [64]Terrain{" + ", ".join("." + fmap['terrains'][c].capitalize() for c in fmap['cells']) + "}", ""]

@@ -48,7 +48,13 @@
   "params": [
     {"name": "start_money", "number": 20},
     {"name": "land_price", "number": 10},
-    {"name": "land_growth_percent", "number": 25}
+    {"name": "land_growth_percent", "number": 25},
+    {"name": "barn_capacity", "number": 10},
+    {"name": "barn_step", "number": 10},
+    {"name": "barn_price", "number": 20},
+    {"name": "barn_growth_percent", "number": 50},
+    {"name": "rat_base_percent", "number": 5},
+    {"name": "rat_step_percent", "number": 5}
   ],
   "sounds": [
     {"name": "blip", "text": "T255 O5 L32 MS C", "loop": false},
@@ -61,7 +67,10 @@
     {"name": "hungry", "text": "T160 O2 L16 G F# F", "loop": false},
     {"name": "quit", "text": "T120 O3 L8 C < B- A- G4", "loop": false},
     {"name": "denied", "text": "T220 O1 L32 MS C C- C", "loop": false},
-    {"name": "buy", "text": "T200 O3 L16 MS C G > C E", "loop": false}
+    {"name": "buy", "text": "T200 O3 L16 MS C G > C E", "loop": false},
+    {"name": "rats", "text": "T240 O5 L32 MS A > C < A > C < A P16 O2 L16 C C-", "loop": false},
+    {"name": "cat", "text": "T180 O4 L16 ML E G B- A8", "loop": false},
+    {"name": "build", "text": "T220 O2 L32 MS C P32 C P32 C P16 O3 C E G", "loop": false}
   ],
   "feature_types": [],
   "features": [],
@@ -71,7 +80,8 @@
     {"name": "wheat", "sprite_set": "", "sprite": "", "max_stack": 999, "tags": [], "props": [{"name": "cost", "value": 2}, {"name": "grow", "value": 4}, {"name": "price", "value": 5}, {"name": "seeds", "value": 3}, {"name": "food", "value": 1}]},
     {"name": "cabbage", "sprite_set": "", "sprite": "", "max_stack": 999, "tags": [], "props": [{"name": "cost", "value": 3}, {"name": "grow", "value": 5}, {"name": "price", "value": 8}, {"name": "seeds", "value": 2}, {"name": "food", "value": 2}]},
     {"name": "corn", "sprite_set": "", "sprite": "", "max_stack": 999, "tags": [], "props": [{"name": "cost", "value": 5}, {"name": "grow", "value": 7}, {"name": "price", "value": 13}, {"name": "seeds", "value": 3}, {"name": "food", "value": 2}]},
-    {"name": "pumpkin", "sprite_set": "", "sprite": "", "max_stack": 999, "tags": [], "props": [{"name": "cost", "value": 8}, {"name": "grow", "value": 9}, {"name": "price", "value": 22}, {"name": "seeds", "value": 2}, {"name": "food", "value": 4}]}
+    {"name": "pumpkin", "sprite_set": "", "sprite": "", "max_stack": 999, "tags": [], "props": [{"name": "cost", "value": 8}, {"name": "grow", "value": 9}, {"name": "price", "value": 22}, {"name": "seeds", "value": 2}, {"name": "food", "value": 4}]},
+    {"name": "cat", "sprite_set": "", "sprite": "", "max_stack": 1, "tags": [], "props": [{"name": "cost", "value": 15}, {"name": "deter_percent", "value": 3}]}
   ],
   "inventories": [],
   "trigger_types": [],

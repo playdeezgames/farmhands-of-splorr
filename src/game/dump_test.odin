@@ -27,6 +27,8 @@ dump_play :: proc(t: ^testing.T) {
 			cell_at(g, x, 0).owned = true
 		}
 		g.land_bought = 36
+		g.barn_level = 2
+		g.cats = 2
 		g.barn[.Carrot] = 30
 		hire(g, 2, 2)
 		hire(g, 5, 5)

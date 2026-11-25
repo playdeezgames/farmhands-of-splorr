@@ -53,6 +53,8 @@ Gfx :: enum {
 	Barn,
 	Scarecrow,
 	Wild,
+	Cat,
+	Rat,
 }
 
 cls :: proc(f: ^Frame, c: u8) {

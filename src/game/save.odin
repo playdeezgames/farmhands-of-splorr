@@ -7,7 +7,7 @@ import "core:mem"
 // whose values are out of range.
 
 SAVE_MAGIC :: u32(0x46484E31) // "FHN1"
-SAVE_VERSION :: u32(2) // 2: land to buy (November 25, 2026)
+SAVE_VERSION :: u32(3) // 2: land to buy; 3: barn capacity, rats and cats (November 25, 2026)
 SAVE_HEADER :: 8
 SAVE_SIZE :: SAVE_HEADER + size_of(Game)
 
@@ -39,7 +39,7 @@ save_valid :: proc(g: ^Game) -> bool {
 	if g.cursor_x < 0 || g.cursor_x >= FIELD_W || g.cursor_y < 0 || g.cursor_y >= FIELD_H {
 		return false
 	}
-	if u8(g.tool) >= len(Tool) || g.turn < 1 || g.pantry < 0 || g.land_bought < 0 {
+	if u8(g.tool) >= len(Tool) || g.turn < 1 || g.pantry < 0 || g.land_bought < 0 || g.barn_level < 0 || g.cats < 0 {
 		return false
 	}
 	for c in g.field {

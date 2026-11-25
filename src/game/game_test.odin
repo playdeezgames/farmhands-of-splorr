@@ -332,3 +332,121 @@ harvest_and_quitting_keep_the_land :: proc(t: ^testing.T) {
 	testing.expect_value(t, cell_at(&g, 4, 4).kind, Cell_Kind.Empty)
 	testing.expect(t, cell_at(&g, 4, 4).owned)
 }
+
+@(test)
+a_full_barn_sells_the_harvest :: proc(t: ^testing.T) {
+	g: Game
+	init_game(&g)
+	own_all(&g)
+	g.barn[.Wheat] = BARN_CAPACITY
+	plant(&g, 0, 0, .Carrot)
+	g.rng = {} // rats or not, the barn is refilled below
+	for _ in 0 ..< CROPS[.Carrot].grow {
+		end_turn(&g)
+	}
+	g.barn = {}
+	g.barn[.Wheat] = BARN_CAPACITY
+	money := g.money
+	g.events = {}
+	testing.expect(t, harvest(&g, 0, 0))
+	testing.expect_value(t, g.barn[.Carrot], 0)
+	testing.expect_value(t, g.money, money + CROPS[.Carrot].price)
+	testing.expect(t, .Sold in g.events)
+	testing.expect_value(t, cell_at(&g, 0, 0).kind, Cell_Kind.Empty)
+}
+
+@(test)
+the_barn_grows_and_gets_dearer_and_draws_rats :: proc(t: ^testing.T) {
+	g: Game
+	init_game(&g)
+	g.money = 1000
+	testing.expect_value(t, barn_capacity(&g), BARN_CAPACITY)
+	testing.expect_value(t, rat_chance(&g), RAT_BASE_PERCENT)
+	p0 := barn_price(&g)
+	testing.expect_value(t, p0, BARN_PRICE)
+	testing.expect(t, expand_barn(&g))
+	testing.expect_value(t, barn_capacity(&g), BARN_CAPACITY + BARN_STEP)
+	testing.expect_value(t, rat_chance(&g), RAT_BASE_PERCENT + RAT_STEP_PERCENT)
+	testing.expect(t, barn_price(&g) > p0)
+	testing.expect_value(t, g.money, 1000 - p0)
+	testing.expect_value(t, sound_for(g.events), Sfx.Build)
+	g.money = 0
+	testing.expect(t, !expand_barn(&g))
+}
+
+@(test)
+cats_lower_the_rat_chance_to_zero_at_most :: proc(t: ^testing.T) {
+	g: Game
+	init_game(&g)
+	g.money = 1000
+	before := rat_chance(&g)
+	testing.expect(t, buy_cat(&g))
+	testing.expect_value(t, g.cats, 1)
+	testing.expect_value(t, g.money, 1000 - CAT_COST)
+	testing.expect_value(t, rat_chance(&g), max(before - CAT_DETER_PERCENT, 0))
+	for _ in 0 ..< 50 {
+		buy_cat(&g)
+	}
+	testing.expect_value(t, rat_chance(&g), 0)
+	g.money = 0
+	testing.expect(t, !buy_cat(&g))
+}
+
+@(test)
+rats_eat_half_the_barn :: proc(t: ^testing.T) {
+	g: Game
+	init_game(&g)
+	g.barn[.Carrot] = 5
+	g.barn[.Corn] = 4
+	g.pantry = 3
+	testing.expect_value(t, rats_feast(&g), 3 + 2)
+	testing.expect_value(t, g.barn[.Carrot], 2)
+	testing.expect_value(t, g.barn[.Corn], 2)
+	testing.expect_value(t, g.pantry, 1)
+}
+
+@(test)
+rats_come_about_as_often_as_the_chance_says :: proc(t: ^testing.T) {
+	g: Game
+	init_game(&g, 12345)
+	g.barn_level = 3 // 20%
+	chance := rat_chance(&g)
+	visits := 0
+	TURNS :: 2000
+	for _ in 0 ..< TURNS {
+		g.barn[.Pumpkin] = 2
+		end_turn(&g)
+		if .Rats in g.events {
+			visits += 1
+		}
+		g.events = {}
+	}
+	expected := TURNS * chance / 100
+	testing.expectf(t, abs(visits - expected) < expected / 4, "%d visits, expected about %d", visits, expected)
+	// With enough cats, never.
+	g.cats = 100
+	for _ in 0 ..< 200 {
+		g.barn[.Pumpkin] = 2
+		end_turn(&g)
+		testing.expect(t, .Rats not_in g.events)
+		g.events = {}
+	}
+}
+
+@(test)
+barn_and_cat_commands :: proc(t: ^testing.T) {
+	g: Game
+	init_game(&g)
+	g.money = 1000
+	command(&g, .Expand_Barn)
+	testing.expect_value(t, g.barn_level, 1)
+	command(&g, .Buy_Cat)
+	testing.expect_value(t, g.cats, 1)
+	testing.expect_value(t, sound_for(g.events), Sfx.Cat)
+	for b in BUTTONS {
+		if b.command == .Buy_Cat {
+			pointer(&g, b.rect.x + 2, b.rect.y + 2)
+		}
+	}
+	testing.expect_value(t, g.cats, 2)
+}

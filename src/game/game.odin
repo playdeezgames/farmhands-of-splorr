@@ -58,6 +58,8 @@ Command :: enum u8 {
 	Tool_4,
 	Tool_5,
 	Tool_6,
+	Expand_Barn,
+	Buy_Cat,
 }
 
 LOG_LINES :: 4
@@ -82,6 +84,9 @@ Event :: enum u8 {
 	Hungry,
 	Quit,
 	Denied,
+	Rats,
+	Cat,
+	Built,
 }
 
 Game :: struct {
@@ -102,10 +107,14 @@ Game :: struct {
 	earned:    int,
 	quits:     int,
 	land_bought: int, // squares bought so far; each costs more than the last
+	barn_level:  int, // expansions bought; each holds BARN_STEP more and draws more rats
+	cats:        int,
+	rng:         Rng, // the rats
 }
 
-init_game :: proc(g: ^Game) {
+init_game :: proc(g: ^Game, seed: u64 = 1) {
 	g^ = {}
+	g.rng = {seed}
 	g.money = START_MONEY
 	g.turn = 1
 	g.cursor_x = FIELD_W / 2 - 1
@@ -117,6 +126,7 @@ init_game :: proc(g: ^Game) {
 	say(g, "Welcome to the farm. Plant crops, hire farmhands, feed them.", COLOR_YELLOW)
 	say(g, "Farmhands make the crops around them grow twice as fast.", COLOR_LIGHT)
 	say(g, "Buy wild land next to yers to grow the farm; each costs more.", COLOR_LIGHT)
+	say(g, "The barn is small and rats like it. Cats help.", COLOR_LIGHT)
 }
 
 cell_at :: proc(g: ^Game, x, y: int) -> ^Cell {
@@ -259,12 +269,24 @@ harvest :: proc(g: ^Game, x, y: int) -> bool {
 	if !ripe(c^) {
 		return false
 	}
-	g.barn[c.crop] += 1
 	g.harvested += 1
+	info := CROPS[c.crop]
 	t: Text
-	add(&t, "Harvested ")
-	add(&t, CROPS[c.crop].name)
-	add(&t, " into the barn.")
+	if barn_count(g) >= barn_capacity(g) {
+		g.money += info.price
+		g.earned += info.price
+		add(&t, "Barn full: sold the ")
+		add(&t, info.name)
+		add(&t, " for $")
+		add_int(&t, info.price)
+		add(&t, ".")
+		g.events += {.Sold}
+	} else {
+		g.barn[c.crop] += 1
+		add(&t, "Harvested ")
+		add(&t, info.name)
+		add(&t, " into the barn.")
+	}
 	say(g, text_of(&t), COLOR_YELLOW)
 	c^ = {owned = true}
 	g.events += {.Harvested}
@@ -275,14 +297,101 @@ harvest :: proc(g: ^Game, x, y: int) -> bool {
 
 // The price of the next square: LAND_PRICE, each one after LAND_GROWTH_PERCENT more (rounded up).
 land_price :: proc(g: ^Game) -> int {
-	p := LAND_PRICE
-	for _ in 0 ..< g.land_bought {
-		p += (p * LAND_GROWTH_PERCENT + 99) / 100
+	return grown(LAND_PRICE, LAND_GROWTH_PERCENT, g.land_bought)
+}
+
+// A price after n rises of percent each, rounded up, capped so it fits in 32 bits.
+grown :: proc(base, percent, n: int) -> int {
+	p := base
+	for _ in 0 ..< n {
+		p += (p * percent + 99) / 100
 		if p > 1_000_000_000 {
 			return 1_000_000_000
 		}
 	}
 	return p
+}
+
+// --- The barn, its rats and the cats.
+
+barn_capacity :: proc(g: ^Game) -> int {
+	return BARN_CAPACITY + BARN_STEP * g.barn_level
+}
+
+barn_count :: proc(g: ^Game) -> int {
+	n := 0
+	for crop in Crop {
+		n += g.barn[crop]
+	}
+	return n
+}
+
+barn_price :: proc(g: ^Game) -> int {
+	return grown(BARN_PRICE, BARN_GROWTH_PERCENT, g.barn_level)
+}
+
+// The chance, in percent, that rats get into the barn this turn.
+rat_chance :: proc(g: ^Game) -> int {
+	return clamp(RAT_BASE_PERCENT + RAT_STEP_PERCENT * g.barn_level - CAT_DETER_PERCENT * g.cats, 0, 100)
+}
+
+expand_barn :: proc(g: ^Game) -> bool {
+	price := barn_price(g)
+	t: Text
+	if g.money < price {
+		add(&t, "A bigger barn costs $")
+		add_int(&t, price)
+		add(&t, ".")
+		say(g, text_of(&t), COLOR_RED)
+		g.events += {.Denied}
+		return false
+	}
+	g.money -= price
+	g.barn_level += 1
+	add(&t, "Built the barn bigger for $")
+	add_int(&t, price)
+	add(&t, ": holds ")
+	add_int(&t, barn_capacity(g))
+	add(&t, ". Rats ")
+	add_int(&t, rat_chance(g))
+	add(&t, "%.")
+	say(g, text_of(&t), COLOR_CYAN)
+	g.events += {.Built}
+	return true
+}
+
+buy_cat :: proc(g: ^Game) -> bool {
+	t: Text
+	if g.money < CAT_COST {
+		add(&t, "A cat costs $")
+		add_int(&t, CAT_COST)
+		add(&t, ".")
+		say(g, text_of(&t), COLOR_RED)
+		g.events += {.Denied}
+		return false
+	}
+	g.money -= CAT_COST
+	g.cats += 1
+	add(&t, "Got a cat for $")
+	add_int(&t, CAT_COST)
+	add(&t, ". Rats ")
+	add_int(&t, rat_chance(g))
+	add(&t, "%.")
+	say(g, text_of(&t), COLOR_CYAN)
+	g.events += {.Cat}
+	return true
+}
+
+// Rats eat half of every crop in the barn (rounded up) and half the pantry. Returns the crops eaten.
+rats_feast :: proc(g: ^Game) -> int {
+	eaten := 0
+	for crop in Crop {
+		n := (g.barn[crop] + 1) / 2
+		g.barn[crop] -= n
+		eaten += n
+	}
+	g.pantry /= 2
+	return eaten
 }
 
 // Wild land can be bought when it touches owned land on a side.
@@ -477,6 +586,9 @@ end_turn :: proc(g: ^Game) {
 			}
 		}
 	}
+	// Roll every turn, so the rolls stay in step whatever is in the barn.
+	rats := rng_int(&g.rng, 100) < rat_chance(g) && (barn_count(g) > 0 || g.pantry > 0)
+	rats_ate := rats ? rats_feast(g) : 0
 	ripened := 0
 	for y in 0 ..< FIELD_H {
 		for x in 0 ..< FIELD_W {
@@ -509,6 +621,14 @@ end_turn :: proc(g: ^Game) {
 		add(&t, fed == 1 ? " farmhand." : " farmhands.")
 	}
 	say(g, text_of(&t), COLOR_WHITE)
+	if rats {
+		t4: Text
+		add(&t4, "Rats got into the barn and ate ")
+		add_int(&t4, rats_ate)
+		add(&t4, rats_ate == 1 ? " crop!" : " crops!")
+		say(g, text_of(&t4), COLOR_RED)
+		g.events += {.Rats}
+	}
 	if hungry > 0 {
 		t2: Text
 		add_int(&t2, hungry)
@@ -568,7 +688,7 @@ command :: proc(g: ^Game, c: Command) {
 		end_turn(g)
 	case .New_Farm:
 		if g.confirm_new {
-			init_game(g)
+			init_game(g, rng_next(&g.rng))
 			g.events += {.Turned}
 		} else {
 			g.confirm_new = true
@@ -578,6 +698,10 @@ command :: proc(g: ^Game, c: Command) {
 	case .Tool_1, .Tool_2, .Tool_3, .Tool_4, .Tool_5, .Tool_6:
 		g.tool = Tool(u8(c) - u8(Command.Tool_1))
 		g.events += {.Moved}
+	case .Expand_Barn:
+		expand_barn(g)
+	case .Buy_Cat:
+		buy_cat(g)
 	}
 }
 

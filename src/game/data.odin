@@ -33,6 +33,14 @@ FARMER_PATIENCE :: 2 // hungry turns a farmer puts up with; one more and they qu
 START_MONEY :: 20
 LAND_PRICE :: 10 // the first square bought
 LAND_GROWTH_PERCENT :: 25 // each square bought costs this much more than the last
+BARN_CAPACITY :: 10 // crops the barn holds at the start
+BARN_STEP :: 10 // crops each expansion adds
+BARN_PRICE :: 20 // the first expansion
+BARN_GROWTH_PERCENT :: 50 // each expansion costs this much more than the last
+RAT_BASE_PERCENT :: 5 // chance each turn that rats eat half the barn
+RAT_STEP_PERCENT :: 5 // more chance for each expansion
+CAT_COST :: 15
+CAT_DETER_PERCENT :: 3 // less chance for each cat
 
 Terrain :: enum u8 {
 	Wild,

@@ -27,12 +27,14 @@ Button :: struct {
 }
 
 BUTTONS := [?]Button {
-	{{PANEL_X, 156, 62, 14}, "Sell 1 X", .Sell},
-	{{PANEL_X + 66, 156, 86, 14}, "Sell all A", .Sell_All},
-	{{PANEL_X + 156, 156, 98, 14}, "Keep seed Z", .Seeds},
-	{{PANEL_X, 174, 104, 16}, "End turn T", .End_Turn},
-	{{PANEL_X + 108, 174, 68, 16}, "Act Enter", .Confirm},
-	{{PANEL_X + 180, 174, 74, 16}, "New farm N", .New_Farm},
+	{{PANEL_X, 160, 62, 14}, "Sell 1 X", .Sell},
+	{{PANEL_X + 66, 160, 86, 14}, "Sell all A", .Sell_All},
+	{{PANEL_X + 156, 160, 98, 14}, "Keep seed Z", .Seeds},
+	{{PANEL_X, 177, 104, 14}, "End turn T", .End_Turn},
+	{{PANEL_X + 108, 177, 68, 14}, "Act Enter", .Confirm},
+	{{PANEL_X + 180, 177, 74, 14}, "New farm N", .New_Farm},
+	{{PANEL_X, 194, 138, 14}, "", .Expand_Barn}, // labels with prices are made in draw_buttons
+	{{PANEL_X + 142, 194, 112, 14}, "", .Buy_Cat},
 }
 
 tool_row :: proc(t: Tool) -> Rect {
@@ -102,7 +104,7 @@ draw_game :: proc(f: ^Frame, g: ^Game) {
 }
 
 draw_header :: proc(f: ^Frame, g: ^Game) {
-	draw_gfx(f, .Scarecrow, 8, 5, COLOR_SOIL)
+	draw_gfx(f, .Scarecrow, 8, 5, COLOR_ORANGE)
 	print(f, "FARMHANDS of SPLORR!!", 24, 7, COLOR_YELLOW)
 	t: Text
 	add(&t, "Turn ")
@@ -217,13 +219,28 @@ draw_tools :: proc(f: ^Frame, g: ^Game) {
 		col(f, "", g.seeds[crop], PANEL_X + 182, y + 2, g.seeds[crop] > 0 ? COLOR_LIME : COLOR_MID)
 		col(f, "", g.barn[crop], PANEL_X + 218, y + 2, g.barn[crop] > 0 ? COLOR_WHITE : COLOR_MID)
 	}
-	draw_gfx(f, .Barn, PANEL_X, 136, COLOR_SOIL)
+	draw_gfx(f, .Barn, PANEL_X, 136, COLOR_ORANGE)
 	t: Text
-	add(&t, "Meals in barn ")
+	add(&t, "Barn ")
+	add_int(&t, barn_count(g))
+	add(&t, "/")
+	add_int(&t, barn_capacity(g))
+	add(&t, "  Meals ")
 	add_int(&t, meals_in_barn(g))
-	add(&t, ", farmhands ")
+	add(&t, "  Hands ")
 	add_int(&t, farmer_count(g))
-	print(f, text_of(&t), PANEL_X + 16, 138, COLOR_LIGHT)
+	print(f, text_of(&t), PANEL_X + 16, 138, barn_count(g) >= barn_capacity(g) ? COLOR_ORANGE : COLOR_LIGHT)
+	draw_gfx(f, .Rat, PANEL_X, 146, COLOR_LIGHT)
+	r: Text
+	add(&r, "Rats ")
+	add_int(&r, rat_chance(g))
+	add(&r, "% a turn")
+	print(f, text_of(&r), PANEL_X + 16, 148, rat_chance(g) > 0 ? COLOR_ORANGE : COLOR_MID)
+	draw_gfx(f, .Cat, PANEL_X + 130, 146, COLOR_LIGHT)
+	k: Text
+	add(&k, "Cats ")
+	add_int(&k, g.cats)
+	print(f, text_of(&k), PANEL_X + 146, 148, COLOR_LIGHT)
 }
 
 draw_buttons :: proc(f: ^Frame, g: ^Game) {
@@ -232,13 +249,29 @@ draw_buttons :: proc(f: ^Frame, g: ^Game) {
 		if b.command == .New_Farm && g.confirm_new {
 			color = COLOR_ORANGE
 		}
+		label := b.label
+		t: Text
+		#partial switch b.command {
+		case .Expand_Barn:
+			add(&t, "Barn +")
+			add_int(&t, BARN_STEP)
+			add(&t, " $")
+			add_int(&t, barn_price(g))
+			add(&t, " B")
+			label = text_of(&t)
+		case .Buy_Cat:
+			add(&t, "Cat $")
+			add_int(&t, CAT_COST)
+			add(&t, " C")
+			label = text_of(&t)
+		}
 		fill_rect(f, b.rect.x, b.rect.y, b.rect.w, b.rect.h, COLOR_DARK)
 		frame_rect(f, b.rect.x, b.rect.y, b.rect.w, b.rect.h, COLOR_MID)
-		print(f, b.label, b.rect.x + (b.rect.w - text_width(b.label)) / 2, b.rect.y + (b.rect.h - GLYPH_H) / 2, u8(color))
+		print(f, label, b.rect.x + (b.rect.w - text_width(label)) / 2, b.rect.y + (b.rect.h - GLYPH_H) / 2, u8(color))
 	}
 }
 
-// What is under the cursor, and the totals.
+// What is under the cursor.
 draw_status :: proc(f: ^Frame, g: ^Game) {
 	c := cell_at(g, g.cursor_x, g.cursor_y)^
 	t: Text
@@ -249,7 +282,7 @@ draw_status :: proc(f: ^Frame, g: ^Game) {
 		} else {
 			add(&t, "Wild land. Buy the land next to it first.")
 		}
-		print(f, text_of(&t), PANEL_X, 198, COLOR_GREEN)
+		print(f, text_of(&t), PANEL_X, 213, COLOR_GREEN)
 		t = {}
 	} else {
 	switch c.kind {
@@ -286,15 +319,7 @@ draw_status :: proc(f: ^Frame, g: ^Game) {
 	case .Farmer:
 		add(&t, c.hunger == 0 ? "Farmhand, fed and working" : "Farmhand, hungry")
 	}
-	print(f, text_of(&t), PANEL_X, 198, COLOR_WHITE)
+	print(f, text_of(&t), PANEL_X, 213, COLOR_WHITE)
 	}
-	s: Text
-	add(&s, "Harvested ")
-	add_int(&s, g.harvested)
-	add(&s, "  Earned $")
-	add_int(&s, g.earned)
-	add(&s, "  Quit ")
-	add_int(&s, g.quits)
-	print(f, text_of(&s), PANEL_X, 212, COLOR_MID)
 	fill_rect(f, 0, LOG_Y - 4, SCREEN_W, 1, COLOR_DARK)
 }

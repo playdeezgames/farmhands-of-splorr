@@ -4,11 +4,11 @@
 
 ## Page text
 
-Start with four squares of soil and buy more as the farm grows, each one dearer than the last. Plant crops, hire farmhands, keep them fed. A fed farmhand makes every crop around them grow twice as fast. Harvest into the barn, then sell or keep crops back as seed. Farmhands eat every turn, and a farmhand hungry for too long quits.
+Start with four squares of soil and buy more as the farm grows, each one dearer than the last. Plant crops, hire farmhands, keep them fed. A fed farmhand makes every crop around them grow twice as fast. Harvest into the barn, then sell or keep crops back as seed. Farmhands eat every turn, and a farmhand hungry for too long quits. The barn holds only so much (the rest is sold at harvest), and the bigger it gets, the more the rats like it. Cats help.
 
 This Metaphor is a demo.
 
-**Controls:** arrows move, Enter acts, 1 to 6 picks, X sells one, A sells all, Z keeps seed, T ends the turn. Mouse and touch: tap anything. Gamepad supported.
+**Controls:** arrows move, Enter acts, 1 to 6 picks, X sells one, A sells all, Z keeps seed, B builds the barn bigger, C buys a cat, T ends the turn. Mouse and touch: tap anything. Gamepad supported.
 
 **Credits:** tiles from the Urizen 1-bit tileset by vurmux (CC0); DINOBYTE font by mby (CC BY 4.0); sounds made in the Anvil. Code made by an AI agent (Claude Code) at the author's direction.
 
