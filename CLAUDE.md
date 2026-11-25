@@ -35,7 +35,7 @@ Odin compiled to `js_wasm32`, a 480 by 270 software framebuffer of palette indic
 ## Standing rules (full text in the vault's `Home.md`)
 
 - **"Push" means `git push`; "ship" means itch.io.** Neither without the user saying that word. One ship a day through Coxswain.
-- **GitHub Pages first**; making the repo public and enabling Pages are the user's call. No 1-Bit Kingdom art here.
+- **GitHub Pages:** live since November 25, 2026 at https://playdeezgames.github.io/farmhands-of-splorr/ (public repo `playdeezgames/farmhands-of-splorr`, served from `main` `/docs`). To update: `tools/pages.sh`, commit `docs/`, push (each push needs the user's go-ahead). Public repo: no 1-Bit Kingdom art, ever.
 - Release standard: `ITCH_DESCRIPTION.md`, `assets/cover.png`, `assets/screenshots/`, `devlog/YYYYMMDD/`, `tools/ship.sh` + `shippit.sh`. Footer back links, AI disclosure and "Send feedback" (LootLocker game not set up yet).
 - In player-facing text the game is a **"Metaphor"** and the voice says **"yer"**.
 - Do not describe or "fix" deliberate design as a problem once the user has decided it.
