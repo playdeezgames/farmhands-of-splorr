@@ -1,0 +1,75 @@
+package game
+
+import "core:mem"
+
+// A save is the whole Game (plain data, no pointers) behind a short header. The page keeps it in
+// localStorage. A save from another build (another size or version) is refused, and so is one
+// whose values are out of range.
+
+SAVE_MAGIC :: u32(0x46484E31) // "FHN1"
+SAVE_VERSION :: u32(1)
+SAVE_HEADER :: 8
+SAVE_SIZE :: SAVE_HEADER + size_of(Game)
+
+write_save :: proc(g: ^Game, out: []u8) -> int {
+	if len(out) < SAVE_SIZE {
+		return 0
+	}
+	put_u32(out[0:], SAVE_MAGIC)
+	put_u32(out[4:], SAVE_VERSION)
+	mem.copy(&out[SAVE_HEADER], g, size_of(Game))
+	return SAVE_SIZE
+}
+
+read_save :: proc(g: ^Game, data: []u8) -> bool {
+	if len(data) != SAVE_SIZE || get_u32(data[0:]) != SAVE_MAGIC || get_u32(data[4:]) != SAVE_VERSION {
+		return false
+	}
+	scratch: Game
+	mem.copy(&scratch, &data[SAVE_HEADER], size_of(Game))
+	if !save_valid(&scratch) {
+		return false
+	}
+	g^ = scratch
+	g.events = {}
+	return true
+}
+
+save_valid :: proc(g: ^Game) -> bool {
+	if g.cursor_x < 0 || g.cursor_x >= FIELD_W || g.cursor_y < 0 || g.cursor_y >= FIELD_H {
+		return false
+	}
+	if u8(g.tool) >= len(Tool) || g.turn < 1 || g.pantry < 0 {
+		return false
+	}
+	for c in g.field {
+		if u8(c.kind) > u8(max(Cell_Kind)) || u8(c.crop) > u8(max(Crop)) {
+			return false
+		}
+		if c.kind == .Crop && int(c.progress) > CROPS[c.crop].grow {
+			return false
+		}
+	}
+	for crop in Crop {
+		if g.barn[crop] < 0 || g.seeds[crop] < 0 {
+			return false
+		}
+	}
+	for l in g.log {
+		if int(l.len) > LOG_COLS || l.color > 15 {
+			return false
+		}
+	}
+	return true
+}
+
+put_u32 :: proc(b: []u8, v: u32) {
+	b[0] = u8(v)
+	b[1] = u8(v >> 8)
+	b[2] = u8(v >> 16)
+	b[3] = u8(v >> 24)
+}
+
+get_u32 :: proc(b: []u8) -> u32 {
+	return u32(b[0]) | u32(b[1]) << 8 | u32(b[2]) << 16 | u32(b[3]) << 24
+}
