@@ -27,6 +27,7 @@ PICKS = [
     ('Coin',        5, 46),
     ('Barn',        9, 24),   # little barn: the barn panel
     ('Scarecrow',   4, 24),   # the title
+    ('Wild',        15, 5),   # grass tufts: land not yet bought
 ]
 
 def tile(col, row):
@@ -99,9 +100,12 @@ d += ["}", "",
       f"FARMER_BOOST :: {farmer['boost']} // extra growth a fed farmer gives each neighbouring crop per turn",
       f"FARMER_APPETITE :: {farmer['appetite']} // meals a farmer eats per turn",
       f"FARMER_PATIENCE :: {farmer['patience']} // hungry turns a farmer puts up with; one more and they quit",
-      f"START_MONEY :: {params['start_money']}", "",
-      "// The field's terrain from the Anvil map, row by row (0 is soil).",
-      "FIELD_TERRAIN := [64]u8{" + ", ".join(str(c) for c in fmap['cells']) + "}", ""]
+      f"START_MONEY :: {params['start_money']}",
+      f"LAND_PRICE :: {params['land_price']} // the first square bought",
+      f"LAND_GROWTH_PERCENT :: {params['land_growth_percent']} // each square bought costs this much more than the last", "",
+      "Terrain :: enum u8 {", *[f"\t{t.capitalize()}," for t in fmap['terrains']], "}", "",
+      "// The field at the start, from the Anvil map, row by row.",
+      "FIELD_TERRAIN := [64]Terrain{" + ", ".join("." + fmap['terrains'][c].capitalize() for c in fmap['cells']) + "}", ""]
 open(os.path.join(ROOT, 'src/game/data.odin'), 'w').write("\n".join(d))
 
 if len(sys.argv) == 3 and sys.argv[1] == '--sheet':

@@ -4,7 +4,7 @@
 
 ## Page text
 
-Plant crops, hire farmhands, keep them fed. A fed farmhand makes every crop around them grow twice as fast. Harvest into the barn, then sell or keep crops back as seed. Farmhands eat every turn, and a farmhand hungry for too long quits.
+Start with four squares of soil and buy more as the farm grows, each one dearer than the last. Plant crops, hire farmhands, keep them fed. A fed farmhand makes every crop around them grow twice as fast. Harvest into the barn, then sell or keep crops back as seed. Farmhands eat every turn, and a farmhand hungry for too long quits.
 
 This Metaphor is a demo.
 

@@ -3,6 +3,13 @@ package game
 
 import "core:testing"
 
+// Most tests want the whole field to plant on.
+own_all :: proc(g: ^Game) {
+	for &c in g.field {
+		c.owned = true
+	}
+}
+
 @(test)
 starts_with_money_and_an_empty_field :: proc(t: ^testing.T) {
 	g: Game
@@ -18,6 +25,7 @@ starts_with_money_and_an_empty_field :: proc(t: ^testing.T) {
 planting_costs_money_or_a_seed :: proc(t: ^testing.T) {
 	g: Game
 	init_game(&g)
+	own_all(&g)
 	testing.expect(t, plant(&g, 0, 0, .Carrot))
 	testing.expect_value(t, g.money, START_MONEY - CROPS[.Carrot].cost)
 	g.seeds[.Carrot] = 1
@@ -34,6 +42,7 @@ planting_costs_money_or_a_seed :: proc(t: ^testing.T) {
 crops_ripen_after_their_turns_and_harvest_into_the_barn :: proc(t: ^testing.T) {
 	g: Game
 	init_game(&g)
+	own_all(&g)
 	plant(&g, 0, 0, .Wheat)
 	for _ in 0 ..< CROPS[.Wheat].grow - 1 {
 		end_turn(&g)
@@ -51,6 +60,7 @@ crops_ripen_after_their_turns_and_harvest_into_the_barn :: proc(t: ^testing.T) {
 a_fed_farmer_speeds_up_all_eight_neighbours :: proc(t: ^testing.T) {
 	g: Game
 	init_game(&g)
+	own_all(&g)
 	g.money = 1000
 	g.barn[.Carrot] = 10
 	hire(&g, 4, 4)
@@ -78,6 +88,7 @@ a_fed_farmer_speeds_up_all_eight_neighbours :: proc(t: ^testing.T) {
 two_farmers_stack :: proc(t: ^testing.T) {
 	g: Game
 	init_game(&g)
+	own_all(&g)
 	g.money = 1000
 	g.barn[.Carrot] = 10
 	hire(&g, 0, 0)
@@ -91,6 +102,7 @@ two_farmers_stack :: proc(t: ^testing.T) {
 a_hungry_farmer_does_not_work_and_then_quits :: proc(t: ^testing.T) {
 	g: Game
 	init_game(&g)
+	own_all(&g)
 	g.money = 1000
 	hire(&g, 0, 0)
 	plant(&g, 1, 0, .Pumpkin)
@@ -109,6 +121,7 @@ a_hungry_farmer_does_not_work_and_then_quits :: proc(t: ^testing.T) {
 a_big_crop_feeds_several_meals :: proc(t: ^testing.T) {
 	g: Game
 	init_game(&g)
+	own_all(&g)
 	g.money = 1000
 	g.barn[.Pumpkin] = 1
 	hire(&g, 0, 0)
@@ -124,6 +137,7 @@ a_big_crop_feeds_several_meals :: proc(t: ^testing.T) {
 farmers_eat_the_cheapest_meal_first :: proc(t: ^testing.T) {
 	g: Game
 	init_game(&g)
+	own_all(&g)
 	g.money = 1000
 	g.barn[.Carrot] = 1
 	g.barn[.Pumpkin] = 1
@@ -138,6 +152,7 @@ farmers_eat_the_cheapest_meal_first :: proc(t: ^testing.T) {
 selling_and_keeping_seed :: proc(t: ^testing.T) {
 	g: Game
 	init_game(&g)
+	own_all(&g)
 	g.barn[.Corn] = 3
 	testing.expect(t, sell(&g, .Corn, 1))
 	testing.expect_value(t, g.money, START_MONEY + CROPS[.Corn].price)
@@ -153,6 +168,7 @@ selling_and_keeping_seed :: proc(t: ^testing.T) {
 hiring_needs_the_money :: proc(t: ^testing.T) {
 	g: Game
 	init_game(&g)
+	own_all(&g)
 	g.money = FARMER_COST - 1
 	testing.expect(t, !hire(&g, 0, 0))
 	g.money = FARMER_COST
@@ -164,6 +180,7 @@ hiring_needs_the_money :: proc(t: ^testing.T) {
 commands_and_pointer_route :: proc(t: ^testing.T) {
 	g: Game
 	init_game(&g)
+	own_all(&g)
 	command(&g, .Tool_1)
 	testing.expect_value(t, g.tool, Tool.Farmer)
 	command(&g, .Prev_Tool)
@@ -189,6 +206,7 @@ commands_and_pointer_route :: proc(t: ^testing.T) {
 saves_round_trip :: proc(t: ^testing.T) {
 	g: Game
 	init_game(&g)
+	own_all(&g)
 	plant(&g, 3, 3, .Cabbage)
 	end_turn(&g)
 	buf: [SAVE_SIZE]u8
@@ -206,6 +224,7 @@ saves_round_trip :: proc(t: ^testing.T) {
 draws_without_crashing :: proc(t: ^testing.T) {
 	g: Game
 	init_game(&g)
+	own_all(&g)
 	g.money = 1000
 	g.barn[.Carrot] = 1
 	hire(&g, 1, 1)
@@ -224,4 +243,92 @@ draws_without_crashing :: proc(t: ^testing.T) {
 		}
 	}
 	testing.expect(t, lit > 1000)
+}
+
+@(test)
+starts_with_only_the_middle_four_squares :: proc(t: ^testing.T) {
+	g: Game
+	init_game(&g)
+	owned := 0
+	for c in g.field {
+		if c.owned {
+			owned += 1
+		}
+	}
+	testing.expect_value(t, owned, 4)
+	for y in 3 ..= 4 {
+		for x in 3 ..= 4 {
+			testing.expect(t, cell_at(&g, x, y).owned)
+		}
+	}
+	testing.expect(t, !plant(&g, 0, 0, .Carrot))
+	testing.expect(t, !hire(&g, 0, 0))
+	testing.expect(t, plant(&g, 3, 3, .Carrot))
+}
+
+@(test)
+land_is_bought_next_to_owned_land_and_gets_dearer :: proc(t: ^testing.T) {
+	g: Game
+	init_game(&g)
+	g.money = 1000
+	testing.expect(t, !can_buy(&g, 0, 0))
+	testing.expect(t, !can_buy(&g, 2, 2)) // diagonal only
+	testing.expect(t, can_buy(&g, 2, 3))
+	testing.expect(t, !buy_land(&g, 0, 0))
+	testing.expect_value(t, g.money, 1000)
+	prices: [dynamic]int
+	defer delete(prices)
+	x := 2
+	for x >= 0 {
+		p := land_price(&g)
+		append(&prices, p)
+		g.events = {}
+		testing.expect(t, buy_land(&g, x, 3))
+		testing.expect_value(t, g.events, bit_set[Event]{.Bought})
+		x -= 1
+	}
+	testing.expect_value(t, prices[0], LAND_PRICE)
+	for i in 1 ..< len(prices) {
+		testing.expect(t, prices[i] > prices[i - 1])
+		testing.expect(t, prices[i] - prices[i - 1] >= prices[i - 1] - (i >= 2 ? prices[i - 2] : prices[0]))
+	}
+	testing.expect_value(t, g.money, 1000 - (prices[0] + prices[1] + prices[2]))
+	testing.expect(t, can_buy(&g, 0, 2))
+	g.money = 0
+	testing.expect(t, !buy_land(&g, 0, 2))
+	testing.expect(t, !cell_at(&g, 0, 2).owned)
+}
+
+@(test)
+acting_on_wild_land_buys_it :: proc(t: ^testing.T) {
+	g: Game
+	init_game(&g)
+	command(&g, .East) // to (4, 3)
+	command(&g, .East) // (5, 3), wild
+	command(&g, .Confirm)
+	testing.expect(t, cell_at(&g, 5, 3).owned)
+	testing.expect_value(t, g.money, START_MONEY - LAND_PRICE)
+	testing.expect_value(t, sound_for(g.events), Sfx.Buy)
+	command(&g, .Confirm) // now plants
+	testing.expect_value(t, cell_at(&g, 5, 3).kind, Cell_Kind.Crop)
+}
+
+@(test)
+harvest_and_quitting_keep_the_land :: proc(t: ^testing.T) {
+	g: Game
+	init_game(&g)
+	plant(&g, 3, 3, .Carrot)
+	for _ in 0 ..< CROPS[.Carrot].grow {
+		end_turn(&g)
+	}
+	testing.expect(t, harvest(&g, 3, 3))
+	testing.expect(t, cell_at(&g, 3, 3).owned)
+	g.barn = {} // nothing to eat
+	g.money = FARMER_COST
+	hire(&g, 4, 4)
+	for _ in 0 ..= FARMER_PATIENCE {
+		end_turn(&g)
+	}
+	testing.expect_value(t, cell_at(&g, 4, 4).kind, Cell_Kind.Empty)
+	testing.expect(t, cell_at(&g, 4, 4).owned)
 }

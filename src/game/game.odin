@@ -13,6 +13,7 @@ Cell_Kind :: enum u8 {
 }
 
 Cell :: struct {
+	owned:    bool, // bought land; wild land must be bought before anything goes on it
 	kind:     Cell_Kind,
 	crop:     Crop, // when kind is Crop
 	progress: u8, // growth so far; ripe at CROPS[crop].grow
@@ -71,6 +72,7 @@ Log_Line :: struct {
 // Things that happened during the last command, for the sound picker.
 Event :: enum u8 {
 	Moved,
+	Bought,
 	Planted,
 	Hired,
 	Harvested,
@@ -99,6 +101,7 @@ Game :: struct {
 	harvested: int,
 	earned:    int,
 	quits:     int,
+	land_bought: int, // squares bought so far; each costs more than the last
 }
 
 init_game :: proc(g: ^Game) {
@@ -108,8 +111,12 @@ init_game :: proc(g: ^Game) {
 	g.cursor_x = FIELD_W / 2 - 1
 	g.cursor_y = FIELD_H / 2 - 1
 	g.tool = .Carrot
+	for t, i in FIELD_TERRAIN {
+		g.field[i].owned = t == .Soil
+	}
 	say(g, "Welcome to the farm. Plant crops, hire farmhands, feed them.", COLOR_YELLOW)
 	say(g, "Farmhands make the crops around them grow twice as fast.", COLOR_LIGHT)
+	say(g, "Buy wild land next to yers to grow the farm; each costs more.", COLOR_LIGHT)
 }
 
 cell_at :: proc(g: ^Game, x, y: int) -> ^Cell {
@@ -145,6 +152,9 @@ log_text :: proc(l: ^Log_Line) -> string {
 // Acts on the cursor cell with the tool in hand.
 act :: proc(g: ^Game) -> bool {
 	c := cell_at(g, g.cursor_x, g.cursor_y)
+	if !c.owned {
+		return buy_land(g, g.cursor_x, g.cursor_y)
+	}
 	switch c.kind {
 	case .Crop:
 		if ripe(c^) {
@@ -186,7 +196,7 @@ act :: proc(g: ^Game) -> bool {
 // Plants a crop on an empty cell, using a seed from the barn if there is one, or paying for it.
 plant :: proc(g: ^Game, x, y: int, crop: Crop) -> bool {
 	c := cell_at(g, x, y)
-	if c.kind != .Empty {
+	if c.kind != .Empty || !c.owned {
 		return false
 	}
 	info := CROPS[crop]
@@ -213,7 +223,7 @@ plant :: proc(g: ^Game, x, y: int, crop: Crop) -> bool {
 		g.events += {.Denied}
 		return false
 	}
-	c^ = {kind = .Crop, crop = crop}
+	c^ = {owned = true, kind = .Crop, crop = crop}
 	say(g, text_of(&t), COLOR_LIME)
 	g.events += {.Planted}
 	return true
@@ -221,7 +231,7 @@ plant :: proc(g: ^Game, x, y: int, crop: Crop) -> bool {
 
 hire :: proc(g: ^Game, x, y: int) -> bool {
 	c := cell_at(g, x, y)
-	if c.kind != .Empty {
+	if c.kind != .Empty || !c.owned {
 		return false
 	}
 	if g.money < FARMER_COST {
@@ -234,7 +244,7 @@ hire :: proc(g: ^Game, x, y: int) -> bool {
 		return false
 	}
 	g.money -= FARMER_COST
-	c^ = {kind = .Farmer, fed = true}
+	c^ = {owned = true, kind = .Farmer, fed = true}
 	t: Text
 	add(&t, "Hired a farmhand for $")
 	add_int(&t, FARMER_COST)
@@ -256,8 +266,66 @@ harvest :: proc(g: ^Game, x, y: int) -> bool {
 	add(&t, CROPS[c.crop].name)
 	add(&t, " into the barn.")
 	say(g, text_of(&t), COLOR_YELLOW)
-	c^ = {}
+	c^ = {owned = true}
 	g.events += {.Harvested}
+	return true
+}
+
+// --- Land.
+
+// The price of the next square: LAND_PRICE, each one after LAND_GROWTH_PERCENT more (rounded up).
+land_price :: proc(g: ^Game) -> int {
+	p := LAND_PRICE
+	for _ in 0 ..< g.land_bought {
+		p += (p * LAND_GROWTH_PERCENT + 99) / 100
+		if p > 1_000_000_000 {
+			return 1_000_000_000
+		}
+	}
+	return p
+}
+
+// Wild land can be bought when it touches owned land on a side.
+can_buy :: proc(g: ^Game, x, y: int) -> bool {
+	if cell_at(g, x, y).owned {
+		return false
+	}
+	SIDES :: [4][2]int{{0, -1}, {0, 1}, {-1, 0}, {1, 0}}
+	for d in SIDES {
+		nx, ny := x + d.x, y + d.y
+		if nx >= 0 && ny >= 0 && nx < FIELD_W && ny < FIELD_H && cell_at(g, nx, ny).owned {
+			return true
+		}
+	}
+	return false
+}
+
+buy_land :: proc(g: ^Game, x, y: int) -> bool {
+	if !can_buy(g, x, y) {
+		say(g, "Wild land. Buy the land next to it first.", COLOR_RED)
+		g.events += {.Denied}
+		return false
+	}
+	price := land_price(g)
+	t: Text
+	if g.money < price {
+		add(&t, "This land costs $")
+		add_int(&t, price)
+		add(&t, ".")
+		say(g, text_of(&t), COLOR_RED)
+		g.events += {.Denied}
+		return false
+	}
+	g.money -= price
+	g.land_bought += 1
+	cell_at(g, x, y)^ = {owned = true}
+	add(&t, "Bought the land for $")
+	add_int(&t, price)
+	add(&t, ". The next costs $")
+	add_int(&t, land_price(g))
+	add(&t, ".")
+	say(g, text_of(&t), COLOR_CYAN)
+	g.events += {.Bought}
 	return true
 }
 
@@ -402,7 +470,7 @@ end_turn :: proc(g: ^Game) {
 			c.hunger += 1
 			c.fed = false
 			if int(c.hunger) > FARMER_PATIENCE {
-				c = {}
+				c = {owned = true}
 				quit += 1
 			} else {
 				hungry += 1

@@ -108,11 +108,15 @@ draw_header :: proc(f: ^Frame, g: ^Game) {
 	add(&t, "Turn ")
 	add_int(&t, g.turn)
 	print(f, text_of(&t), PANEL_X, 7, COLOR_LIGHT)
-	draw_gfx(f, .Coin, 340, 5, COLOR_YELLOW)
+	land: Text
+	add(&land, "Land $")
+	add_int(&land, land_price(g))
+	print(f, text_of(&land), PANEL_X + 66, 7, COLOR_GREEN)
+	draw_gfx(f, .Coin, 400, 5, COLOR_YELLOW)
 	m: Text
 	add(&m, "$")
 	add_int(&m, g.money)
-	print(f, text_of(&m), 356, 7, COLOR_YELLOW)
+	print(f, text_of(&m), 416, 7, COLOR_YELLOW)
 	fill_rect(f, 0, 19, SCREEN_W, 1, COLOR_DARK)
 }
 
@@ -140,8 +144,17 @@ draw_field :: proc(f: ^Frame, g: ^Game) {
 draw_cell :: proc(f: ^Frame, g: ^Game, x, y: int) {
 	px := FIELD_X + x * CELL
 	py := FIELD_Y + y * CELL
-	fill_rect(f, px + 1, py + 1, CELL - 2, CELL - 2, COLOR_SOIL_DARK)
 	c := cell_at(g, x, y)^
+	if !c.owned {
+		// Wild land: grass on the dark background; the squares that can be bought get an edge.
+		fill_rect(f, px + 1, py + 1, CELL - 2, CELL - 2, COLOR_BLACK)
+		draw_gfx_scaled(f, .Wild, px, py, 2, can_buy(g, x, y) ? COLOR_GREEN : COLOR_DARK)
+		if can_buy(g, x, y) {
+			frame_rect(f, px + 1, py + 1, CELL - 2, CELL - 2, COLOR_DARK)
+		}
+		return
+	}
+	fill_rect(f, px + 1, py + 1, CELL - 2, CELL - 2, COLOR_SOIL_DARK)
 	switch c.kind {
 	case .Empty:
 		draw_gfx_scaled(f, .Soil, px, py, 2, COLOR_SOIL)
@@ -229,6 +242,16 @@ draw_buttons :: proc(f: ^Frame, g: ^Game) {
 draw_status :: proc(f: ^Frame, g: ^Game) {
 	c := cell_at(g, g.cursor_x, g.cursor_y)^
 	t: Text
+	if !c.owned {
+		if can_buy(g, g.cursor_x, g.cursor_y) {
+			add(&t, "Wild land. Enter: buy it for $")
+			add_int(&t, land_price(g))
+		} else {
+			add(&t, "Wild land. Buy the land next to it first.")
+		}
+		print(f, text_of(&t), PANEL_X, 198, COLOR_GREEN)
+		t = {}
+	} else {
 	switch c.kind {
 	case .Empty:
 		add(&t, "Soil. Enter: ")
@@ -264,6 +287,7 @@ draw_status :: proc(f: ^Frame, g: ^Game) {
 		add(&t, c.hunger == 0 ? "Farmhand, fed and working" : "Farmhand, hungry")
 	}
 	print(f, text_of(&t), PANEL_X, 198, COLOR_WHITE)
+	}
 	s: Text
 	add(&s, "Harvested ")
 	add_int(&s, g.harvested)

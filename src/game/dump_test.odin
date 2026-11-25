@@ -18,6 +18,15 @@ dump_play :: proc(t: ^testing.T) {
 		defer free(g)
 		init_game(g)
 		g.money = 400
+		for y in 1 ..< 7 {
+			for x in 1 ..< 7 {
+				cell_at(g, x, y).owned = true
+			}
+		}
+		for x in 2 ..< 6 {
+			cell_at(g, x, 0).owned = true
+		}
+		g.land_bought = 36
 		g.barn[.Carrot] = 30
 		hire(g, 2, 2)
 		hire(g, 5, 5)
@@ -25,7 +34,7 @@ dump_play :: proc(t: ^testing.T) {
 		i := 0
 		for y in 0 ..< FIELD_H {
 			for x in 0 ..< FIELD_W {
-				if cell_at(g, x, y).kind == .Empty && (x + y) % 5 != 0 {
+				if cell_at(g, x, y).owned && cell_at(g, x, y).kind == .Empty && (x + y) % 5 != 0 {
 					plant(g, x, y, crops[i % len(crops)])
 					i += 1
 				}
@@ -46,7 +55,7 @@ dump_play :: proc(t: ^testing.T) {
 		}
 		make_seeds(g, .Carrot)
 		sell(g, .Wheat, 9)
-		g.cursor_x, g.cursor_y = 3, 4
+		g.cursor_x, g.cursor_y = 7, 3
 		g.tool = .Corn
 		f := new(Frame)
 		defer free(f)

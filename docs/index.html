@@ -50,7 +50,7 @@
 	function sendPointer(x, y) { unlockAudio(); ex.platform_pointer(x, y); playSfx(ex.platform_sfx()); saveSoon(); }
 
 	// Sound: WAVs made in the Anvil. The order matches game.Sfx (src/game/sounds.odin; 0 is none).
-	const SFX = [null, "blip", "plant", "hire", "harvest", "sell", "seed", "turn", "hungry", "quit", "denied"];
+	const SFX = [null, "blip", "plant", "hire", "harvest", "sell", "seed", "turn", "hungry", "quit", "denied", "buy"];
 	const SFX_GAIN = { blip: 0.15, plant: 0.3, denied: 0.3 };
 	const SOUND_KEY = "fhos-sound";
 	let soundOn = true;

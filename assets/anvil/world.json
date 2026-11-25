@@ -23,18 +23,19 @@
   "tilesets": [],
   "terrain_sets": [
     {"name": "field", "default": "soil", "terrains": [
-      {"name": "soil", "tags": [], "tileset": "", "image": ""}
+      {"name": "soil", "tags": [], "tileset": "", "image": ""},
+      {"name": "wild", "tags": [], "tileset": "", "image": ""}
     ]}
   ],
   "maps": [
     {"name": "farm", "terrain_set": "field", "columns": 8, "rows": 8,
-      "terrains": ["soil"],
+      "terrains": ["wild", "soil"],
       "cells": [
         0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 1, 1, 0, 0, 0,
+        0, 0, 0, 1, 1, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0
@@ -45,7 +46,9 @@
   ],
   "sprite_sets": [],
   "params": [
-    {"name": "start_money", "number": 20}
+    {"name": "start_money", "number": 20},
+    {"name": "land_price", "number": 10},
+    {"name": "land_growth_percent", "number": 25}
   ],
   "sounds": [
     {"name": "blip", "text": "T255 O5 L32 MS C", "loop": false},
@@ -57,7 +60,8 @@
     {"name": "turn", "text": "T160 O3 L8 C E", "loop": false},
     {"name": "hungry", "text": "T160 O2 L16 G F# F", "loop": false},
     {"name": "quit", "text": "T120 O3 L8 C < B- A- G4", "loop": false},
-    {"name": "denied", "text": "T220 O1 L32 MS C C- C", "loop": false}
+    {"name": "denied", "text": "T220 O1 L32 MS C C- C", "loop": false},
+    {"name": "buy", "text": "T200 O3 L16 MS C G > C E", "loop": false}
   ],
   "feature_types": [],
   "features": [],

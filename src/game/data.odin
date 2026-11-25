@@ -31,6 +31,13 @@ FARMER_BOOST :: 1 // extra growth a fed farmer gives each neighbouring crop per 
 FARMER_APPETITE :: 1 // meals a farmer eats per turn
 FARMER_PATIENCE :: 2 // hungry turns a farmer puts up with; one more and they quit
 START_MONEY :: 20
+LAND_PRICE :: 10 // the first square bought
+LAND_GROWTH_PERCENT :: 25 // each square bought costs this much more than the last
 
-// The field's terrain from the Anvil map, row by row (0 is soil).
-FIELD_TERRAIN := [64]u8{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+Terrain :: enum u8 {
+	Wild,
+	Soil,
+}
+
+// The field at the start, from the Anvil map, row by row.
+FIELD_TERRAIN := [64]Terrain{.Wild, .Wild, .Wild, .Wild, .Wild, .Wild, .Wild, .Wild, .Wild, .Wild, .Wild, .Wild, .Wild, .Wild, .Wild, .Wild, .Wild, .Wild, .Wild, .Wild, .Wild, .Wild, .Wild, .Wild, .Wild, .Wild, .Wild, .Soil, .Soil, .Wild, .Wild, .Wild, .Wild, .Wild, .Wild, .Soil, .Soil, .Wild, .Wild, .Wild, .Wild, .Wild, .Wild, .Wild, .Wild, .Wild, .Wild, .Wild, .Wild, .Wild, .Wild, .Wild, .Wild, .Wild, .Wild, .Wild, .Wild, .Wild, .Wild, .Wild, .Wild, .Wild, .Wild, .Wild}
