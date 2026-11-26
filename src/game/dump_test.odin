@@ -102,6 +102,14 @@ dump_farm :: proc(g: ^Game) {
 	}
 	make_seeds(g, .Carrot)
 	sell(g, .Carrot, 6)
+	// some tired soil, so the bars and a short crop show
+	for y in 0 ..< FIELD_H {
+		for x in 0 ..< FIELD_W {
+			if (x * 3 + y) % 4 == 0 {
+				soil_at(g, x, y)^ = {.N = 1, .P = 3, .K = 2}
+			}
+		}
+	}
 	g.cursor_x, g.cursor_y = 6, 2
 	g.tool = .Corn
 }

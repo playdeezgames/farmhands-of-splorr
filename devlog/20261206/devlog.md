@@ -11,6 +11,7 @@ It's a small turn-based farm on an 8 by 8 field. Ye start with four squares of s
 - **The barn:** sell the harvest, keep some back as seed, and feed the hands from what's left. Build it bigger and the rats move in. Buy a cat, and another when it wanders off.
 - **Crows:** they eat whatever a scarecrow isn't watching. Each scarecrow guards a 5 by 5 patch, until the weather knocks it down.
 - **Land:** every square ye buy makes the next one dearer.
+- **Soil:** each crop takes a nutrient and gives back another. Rotate them, or spread manure. And don't leave a ripe crop standing too long: it rots.
 
 It's a demo, with no goal but a bigger farm. It saves in yer browser, plays with keys, mouse, touch or a gamepad.
 

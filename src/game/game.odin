@@ -17,7 +17,8 @@ Cell :: struct {
 	owned:    bool, // bought land; wild land must be bought before anything goes on it
 	kind:     Cell_Kind,
 	crop:     Crop, // when kind is Crop
-	progress: u8, // growth so far; ripe at CROPS[crop].grow
+	progress: u8, // growth so far in half turns; ripe at 2 * CROPS[crop].grow
+	rot:      u8, // ripe crop: turns left in the field; rots at CROPS[crop].keep
 	hunger:   u8, // farmer: hungry turns in a row
 	fed:      bool, // farmer: ate this turn, so tends the neighbours
 	moved:    bool, // farmer: set down this turn, so settles in and works from the next
@@ -33,10 +34,11 @@ Tool :: enum u8 {
 	Corn,
 	Pumpkin,
 	Scarecrow,
+	Manure,
 }
 
 tool_crop :: proc(t: Tool) -> (Crop, bool) {
-	if t == .Farmer || t == .Scarecrow {
+	if t == .Farmer || t == .Scarecrow || t == .Manure {
 		return .Carrot, false
 	}
 	return Crop(u8(t) - 1), true
@@ -66,6 +68,7 @@ Command :: enum u8 {
 	Buy_Cat,
 	Dismiss, // let the farmhand or scarecrow under the cursor (or in hand) go
 	Tool_7,
+	Tool_8,
 }
 
 LOG_LINES :: 4
@@ -99,6 +102,8 @@ Event :: enum u8 {
 	Carried,
 	Dismissed,
 	Fell,
+	Rotted,
+	Manured,
 }
 
 Game :: struct {
@@ -127,6 +132,91 @@ Game :: struct {
 	carry_x:     int,
 	carry_y:     int,
 	carry_cell:  Cell,
+	// N, P and K on each square. Kept apart from the cells so it stays with the land when what
+	// stands on it is planted, harvested, moved or let go.
+	soil:        [FIELD_W * FIELD_H][Nutrient]u8,
+}
+
+Nutrient :: enum u8 {
+	N,
+	P,
+	K,
+}
+
+NUTRIENT_NAME := [Nutrient]string{.N = "N", .P = "P", .K = "K"}
+
+soil_at :: proc(g: ^Game, x, y: int) -> ^[Nutrient]u8 {
+	return &g.soil[y * FIELD_W + x]
+}
+
+// The first nutrient the crop at (x, y) needs more of than the square has; a short crop grows at half speed.
+short_of :: proc(g: ^Game, x, y: int) -> (Nutrient, bool) {
+	c := cell_at(g, x, y)
+	if c.kind != .Crop {
+		return .N, false
+	}
+	soil := soil_at(g, x, y)
+	for n in Nutrient {
+		if int(soil[n]) < CROPS[c.crop].uses[int(n)] {
+			return n, true
+		}
+	}
+	return .N, false
+}
+
+// The soil pays for a crop that was harvested or rotted: its uses come out, its gives go back.
+pay_soil :: proc(g: ^Game, x, y: int, crop: Crop) {
+	soil := soil_at(g, x, y)
+	for n in Nutrient {
+		v := int(soil[n]) - CROPS[crop].uses[int(n)] + CROPS[crop].gives[int(n)]
+		soil[n] = u8(clamp(v, 0, SOIL_MAX))
+	}
+}
+
+add_soil :: proc(g: ^Game, x, y, amount: int) {
+	soil := soil_at(g, x, y)
+	for n in Nutrient {
+		soil[n] = u8(min(int(soil[n]) + amount, SOIL_MAX))
+	}
+}
+
+soil_full :: proc(g: ^Game, x, y: int) -> bool {
+	for v in soil_at(g, x, y) {
+		if int(v) < SOIL_MAX {
+			return false
+		}
+	}
+	return true
+}
+
+// Spreads manure on an owned square, empty or under a crop.
+manure :: proc(g: ^Game, x, y: int) -> bool {
+	c := cell_at(g, x, y)
+	if !c.owned {
+		return false
+	}
+	t: Text
+	if soil_full(g, x, y) {
+		say(g, "The soil is already rich.", COLOR_LIGHT)
+		g.events += {.Denied}
+		return false
+	}
+	if g.money < MANURE_COST {
+		add(&t, "Manure costs $")
+		add_int(&t, MANURE_COST)
+		add(&t, ".")
+		say(g, text_of(&t), COLOR_RED)
+		g.events += {.Denied}
+		return false
+	}
+	g.money -= MANURE_COST
+	add_soil(g, x, y, MANURE_AMOUNT)
+	add(&t, "Spread manure for $")
+	add_int(&t, MANURE_COST)
+	add(&t, ". The soil is richer.")
+	say(g, text_of(&t), COLOR_LIME)
+	g.events += {.Manured}
+	return true
 }
 
 init_game :: proc(g: ^Game, seed: u64 = 1) {
@@ -139,11 +229,12 @@ init_game :: proc(g: ^Game, seed: u64 = 1) {
 	g.tool = .Carrot
 	for t, i in FIELD_TERRAIN {
 		g.field[i].owned = t == .Soil
+		g.soil[i] = {.N = SOIL_MAX, .P = SOIL_MAX, .K = SOIL_MAX}
 	}
 	say(g, "Welcome to the farm. Plant crops, hire farmhands, feed them.", COLOR_YELLOW)
 	say(g, "Farmhands make the crops around them grow twice as fast.", COLOR_LIGHT)
-	say(g, "Buy land next to yers; each costs more. Crows eat crops: scarecrows!", COLOR_LIGHT)
-	say(g, "The barn is small and rats like it. Cats help, but they wander.", COLOR_LIGHT)
+	say(g, "Crows eat crops: scarecrows! Rats raid the barn: cats! Buy land.", COLOR_LIGHT)
+	say(g, "Crops tire the soil: rotate them, or spread manure. Ripe crops rot.", COLOR_LIGHT)
 }
 
 cell_at :: proc(g: ^Game, x, y: int) -> ^Cell {
@@ -151,7 +242,7 @@ cell_at :: proc(g: ^Game, x, y: int) -> ^Cell {
 }
 
 ripe :: proc(c: Cell) -> bool {
-	return c.kind == .Crop && int(c.progress) >= CROPS[c.crop].grow
+	return c.kind == .Crop && int(c.progress) >= 2 * CROPS[c.crop].grow
 }
 
 // --- The log: the newest line at the bottom.
@@ -185,6 +276,9 @@ act :: proc(g: ^Game) -> bool {
 	if !c.owned {
 		return buy_land(g, g.cursor_x, g.cursor_y)
 	}
+	if g.tool == .Manure && (c.kind == .Empty || c.kind == .Crop) {
+		return manure(g, g.cursor_x, g.cursor_y)
+	}
 	switch c.kind {
 	case .Crop:
 		if ripe(c^) {
@@ -194,7 +288,7 @@ act :: proc(g: ^Game) -> bool {
 		t: Text
 		add(&t, info.name)
 		add(&t, ": ")
-		add_int(&t, int(c.progress))
+		add_halves(&t, int(c.progress))
 		add(&t, " of ")
 		add_int(&t, info.grow)
 		add(&t, " grown.")
@@ -418,6 +512,7 @@ harvest :: proc(g: ^Game, x, y: int) -> bool {
 		add(&t, " into the barn.")
 	}
 	say(g, text_of(&t), COLOR_YELLOW)
+	pay_soil(g, x, y, c.crop)
 	c^ = {owned = true}
 	g.events += {.Harvested}
 	return true
@@ -758,15 +853,31 @@ end_turn :: proc(g: ^Game) {
 			c.health -= u8(wear)
 		}
 	}
-	ripened := 0
+	// Growth in half turns: half speed when the soil is short. A crop already ripe ages instead,
+	// and one left too long rots, paying the soil and leaving compost.
+	ripened, rotted, rotted_crop := 0, 0, Crop.Carrot
 	for y in 0 ..< FIELD_H {
 		for x in 0 ..< FIELD_W {
 			c := cell_at(g, x, y)
-			if c.kind != .Crop || ripe(c^) {
+			if c.kind != .Crop {
 				continue
 			}
-			p := min(int(c.progress) + growth_at(g, x, y), CROPS[c.crop].grow)
-			c.progress = u8(p)
+			if ripe(c^) {
+				c.rot += 1
+				if int(c.rot) >= CROPS[c.crop].keep {
+					rotted += 1
+					rotted_crop = c.crop
+					pay_soil(g, x, y, c.crop)
+					add_soil(g, x, y, COMPOST)
+					c^ = {owned = true}
+				}
+				continue
+			}
+			step := growth_at(g, x, y)
+			if _, short := short_of(g, x, y); !short {
+				step *= 2
+			}
+			c.progress = u8(min(int(c.progress) + step, 2 * CROPS[c.crop].grow))
 			if ripe(c^) {
 				ripened += 1
 			}
@@ -811,6 +922,19 @@ end_turn :: proc(g: ^Game) {
 		}
 		say(g, text_of(&t5), COLOR_RED)
 		g.events += {.Crows}
+	}
+	if rotted > 0 {
+		t8: Text
+		if rotted == 1 {
+			add(&t8, "A ")
+			add(&t8, CROPS[rotted_crop].name)
+			add(&t8, " rotted in the field.")
+		} else {
+			add_int(&t8, rotted)
+			add(&t8, " crops rotted in the field.")
+		}
+		say(g, text_of(&t8), COLOR_ORANGE)
+		g.events += {.Rotted}
 	}
 	if fell > 0 {
 		t7: Text
@@ -908,6 +1032,9 @@ command :: proc(g: ^Game, c: Command) {
 	case .Tool_7:
 		g.tool = .Scarecrow
 		g.events += {.Moved}
+	case .Tool_8:
+		g.tool = .Manure
+		g.events += {.Moved}
 	}
 }
 
@@ -930,6 +1057,14 @@ add :: proc(t: ^Text, s: string) {
 			t.buf[t.n] = s[i]
 			t.n += 1
 		}
+	}
+}
+
+// A count of half turns, as "3" or "3.5".
+add_halves :: proc(t: ^Text, halves: int) {
+	add_int(t, halves / 2)
+	if halves % 2 == 1 {
+		add(t, ".5")
 	}
 }
 

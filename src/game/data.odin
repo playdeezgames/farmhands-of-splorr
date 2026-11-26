@@ -16,14 +16,17 @@ Crop_Info :: struct {
 	price: int, // money for one sold
 	seeds: int, // seeds from one kept back
 	food:  int, // meals one feeds
+	uses:  [3]int, // N, P, K the soil pays when it is harvested or rots
+	gives: [3]int, // N, P, K it puts back then
+	keep:  int, // turns it lasts ripe in the field before it rots
 }
 
 CROPS := [Crop]Crop_Info {
-	.Carrot = {"Carrot", 1, 3, 3, 2, 1},
-	.Wheat = {"Wheat", 2, 4, 5, 3, 1},
-	.Cabbage = {"Cabbage", 3, 5, 8, 2, 2},
-	.Corn = {"Corn", 5, 7, 13, 3, 2},
-	.Pumpkin = {"Pumpkin", 8, 9, 22, 2, 4},
+	.Carrot = {"Carrot", 1, 3, 3, 2, 1, {0, 1, 0}, {0, 0, 1}, 3},
+	.Wheat = {"Wheat", 2, 4, 5, 3, 1, {1, 0, 0}, {0, 1, 0}, 4},
+	.Cabbage = {"Cabbage", 3, 5, 8, 2, 2, {2, 0, 0}, {0, 1, 0}, 2},
+	.Corn = {"Corn", 5, 7, 13, 3, 2, {2, 0, 0}, {0, 0, 1}, 3},
+	.Pumpkin = {"Pumpkin", 8, 9, 22, 2, 4, {0, 0, 2}, {1, 0, 0}, 5},
 }
 
 FARMER_COST :: 25
@@ -47,6 +50,10 @@ SCARECROW_COST :: 20
 SCARECROW_RADIUS :: 2 // guards the square this many cells around it
 SCARECROW_HEALTH :: 12 // a new scarecrow's health
 SCARECROW_WEAR_MAX :: 2 // the weather takes 0 to this much health a turn
+SOIL_MAX :: 4 // each of N, P and K on a square; every square starts full
+COMPOST :: 1 // N, P and K a rotted crop gives back
+MANURE_COST :: 4
+MANURE_AMOUNT :: 4 // N, P and K one load of manure adds
 
 Terrain :: enum u8 {
 	Wild,

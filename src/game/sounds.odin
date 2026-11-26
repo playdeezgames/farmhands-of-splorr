@@ -24,6 +24,8 @@ Sfx :: enum i32 {
 	Wander,
 	Dismiss,
 	Fall,
+	Rot,
+	Manure,
 }
 
 sound_for :: proc(events: bit_set[Event]) -> Sfx {
@@ -38,6 +40,8 @@ sound_for :: proc(events: bit_set[Event]) -> Sfx {
 		return .Wander
 	case .Fell in events:
 		return .Fall
+	case .Rotted in events:
+		return .Rot
 	case .Hungry in events:
 		return .Hungry
 	case .Turned in events:
@@ -52,6 +56,8 @@ sound_for :: proc(events: bit_set[Event]) -> Sfx {
 		return .Build
 	case .Dismissed in events:
 		return .Dismiss
+	case .Manured in events:
+		return .Manure
 	case .Cat in events:
 		return .Cat
 	case .Bought in events:

@@ -4,6 +4,11 @@ package game
 import "core:testing"
 
 // Most tests want the whole field to plant on.
+// Whole turns of growth a crop has (progress counts half turns).
+turns_grown :: proc(c: Cell) -> int {
+	return int(c.progress) / 2
+}
+
 own_all :: proc(g: ^Game) {
 	for &c in g.field {
 		c.owned = true
@@ -76,11 +81,11 @@ a_fed_farmer_speeds_up_all_eight_neighbours :: proc(t: ^testing.T) {
 	for y in 3 ..= 5 {
 		for x in 3 ..= 5 {
 			if x != 4 || y != 4 {
-				testing.expect_value(t, int(cell_at(&g, x, y).progress), 1 + FARMER_BOOST)
+				testing.expect_value(t, turns_grown(cell_at(&g, x, y)^), 1 + FARMER_BOOST)
 			}
 		}
 	}
-	testing.expect_value(t, int(cell_at(&g, 0, 0).progress), 1)
+	testing.expect_value(t, turns_grown(cell_at(&g, 0, 0)^), 1)
 	testing.expect_value(t, g.barn[.Carrot], 10 - FARMER_APPETITE)
 }
 
@@ -95,7 +100,7 @@ two_farmers_stack :: proc(t: ^testing.T) {
 	hire(&g, 2, 0)
 	plant(&g, 1, 0, .Pumpkin)
 	end_turn(&g)
-	testing.expect_value(t, int(cell_at(&g, 1, 0).progress), 1 + 2 * FARMER_BOOST)
+	testing.expect_value(t, turns_grown(cell_at(&g, 1, 0)^), 1 + 2 * FARMER_BOOST)
 }
 
 @(test)
@@ -107,7 +112,7 @@ a_hungry_farmer_does_not_work_and_then_quits :: proc(t: ^testing.T) {
 	hire(&g, 0, 0)
 	plant(&g, 1, 0, .Pumpkin)
 	end_turn(&g)
-	testing.expect_value(t, int(cell_at(&g, 1, 0).progress), 1)
+	testing.expect_value(t, turns_grown(cell_at(&g, 1, 0)^), 1)
 	testing.expect_value(t, int(cell_at(&g, 0, 0).hunger), 1)
 	testing.expect(t, .Hungry in g.events)
 	for _ in 0 ..< FARMER_PATIENCE {
@@ -183,6 +188,8 @@ commands_and_pointer_route :: proc(t: ^testing.T) {
 	own_all(&g)
 	command(&g, .Tool_1)
 	testing.expect_value(t, g.tool, Tool.Farmer)
+	command(&g, .Prev_Tool)
+	testing.expect_value(t, g.tool, Tool.Manure)
 	command(&g, .Prev_Tool)
 	testing.expect_value(t, g.tool, Tool.Scarecrow)
 	command(&g, .Prev_Tool)
@@ -618,10 +625,10 @@ moving_a_farmhand :: proc(t: ^testing.T) {
 	place_scarecrow(&g, 4, 4)
 	cell_at(&g, 6, 6)^ = {owned = true}
 	end_turn(&g)
-	testing.expect_value(t, int(cell_at(&g, 3, 4).progress), 1)
+	testing.expect_value(t, turns_grown(cell_at(&g, 3, 4)^), 1)
 	testing.expect(t, !cell_at(&g, 3, 3).moved)
 	end_turn(&g)
-	testing.expect_value(t, int(cell_at(&g, 3, 4).progress), 1 + 1 + FARMER_BOOST)
+	testing.expect_value(t, turns_grown(cell_at(&g, 3, 4)^), 1 + 1 + FARMER_BOOST)
 }
 
 @(test)
@@ -639,7 +646,7 @@ putting_a_farmhand_back_is_not_a_move :: proc(t: ^testing.T) {
 	act(&g) // back where they came from
 	testing.expect(t, !cell_at(&g, 3, 3).moved)
 	end_turn(&g)
-	testing.expect_value(t, int(cell_at(&g, 3, 4).progress), 1 + FARMER_BOOST)
+	testing.expect_value(t, turns_grown(cell_at(&g, 3, 4)^), 1 + FARMER_BOOST)
 	// ending the turn with a farmhand in hand puts them back
 	act(&g)
 	g.cursor_x, g.cursor_y = 0, 0
@@ -803,6 +810,159 @@ a_save_with_a_broken_scarecrow_is_refused :: proc(t: ^testing.T) {
 	write_save(&g, buf[:])
 	testing.expect(t, !read_save(&back, buf[:]))
 	g.field[27].health = SCARECROW_HEALTH
+	write_save(&g, buf[:])
+	testing.expect(t, read_save(&back, buf[:]))
+}
+
+// --- Soil, rotation, manure and rotting (November 26, 2026).
+
+// A crop planted at (x, y) and grown ripe in one go, then harvested: the soil pays for it.
+grow_and_harvest :: proc(g: ^Game, x, y: int, crop: Crop) {
+	cell_at(g, x, y)^ = {owned = true, kind = .Crop, crop = crop, progress = u8(2 * CROPS[crop].grow)}
+	harvest(g, x, y)
+	g.barn = {}
+}
+
+@(test)
+harvest_pays_the_soil :: proc(t: ^testing.T) {
+	g: Game
+	init_game(&g)
+	own_all(&g)
+	soil_at(&g, 0, 0)^ = {.N = 1, .P = 2, .K = SOIL_MAX}
+	grow_and_harvest(&g, 0, 0, .Corn) // uses N2, gives K1
+	testing.expect_value(t, soil_at(&g, 0, 0)^, [Nutrient]u8{.N = 0, .P = 2, .K = SOIL_MAX})
+	grow_and_harvest(&g, 0, 0, .Pumpkin) // uses K2, gives N1
+	testing.expect_value(t, soil_at(&g, 0, 0)^, [Nutrient]u8{.N = 1, .P = 2, .K = SOIL_MAX - 2})
+}
+
+@(test)
+a_short_crop_grows_at_half_speed :: proc(t: ^testing.T) {
+	g: Game
+	init_game(&g)
+	own_all(&g)
+	g.money = 1000
+	place_scarecrow(&g, 7, 7) // no crows on the watched squares
+	place_scarecrow(&g, 2, 2)
+	plant(&g, 0, 0, .Corn)
+	plant(&g, 2, 0, .Corn)
+	soil_at(&g, 2, 0)[.N] = 1 // short of N
+	n, short := short_of(&g, 2, 0)
+	testing.expect(t, short)
+	testing.expect_value(t, n, Nutrient.N)
+	_, short = short_of(&g, 0, 0)
+	testing.expect(t, !short)
+	end_turn(&g)
+	testing.expect_value(t, int(cell_at(&g, 0, 0).progress), 2)
+	testing.expect_value(t, int(cell_at(&g, 2, 0).progress), 1)
+	// a farmhand's boost is halved too
+	g.barn[.Pumpkin] = 10
+	hire(&g, 1, 0)
+	end_turn(&g)
+	testing.expect_value(t, int(cell_at(&g, 0, 0).progress), 2 + 2 * (1 + FARMER_BOOST))
+	testing.expect_value(t, int(cell_at(&g, 2, 0).progress), 1 + (1 + FARMER_BOOST))
+}
+
+@(test)
+rotation_keeps_a_square_going :: proc(t: ^testing.T) {
+	g: Game
+	init_game(&g)
+	own_all(&g)
+	short_at :: proc(g: ^Game, crop: Crop) -> bool {
+		cell_at(g, 0, 0)^ = {owned = true, kind = .Crop, crop = crop}
+		_, short := short_of(g, 0, 0)
+		return short
+	}
+	// pumpkin, cabbage, carrot from full: never short
+	for crop in ([?]Crop{.Pumpkin, .Cabbage, .Carrot}) {
+		testing.expectf(t, !short_at(&g, crop), "%v short", crop)
+		grow_and_harvest(&g, 0, 0, crop)
+	}
+	// corn over and over: short by the third
+	g.soil[0] = {.N = SOIL_MAX, .P = SOIL_MAX, .K = SOIL_MAX}
+	testing.expect(t, !short_at(&g, .Corn))
+	grow_and_harvest(&g, 0, 0, .Corn)
+	testing.expect(t, !short_at(&g, .Corn))
+	grow_and_harvest(&g, 0, 0, .Corn)
+	testing.expect(t, short_at(&g, .Corn))
+}
+
+@(test)
+spreading_manure :: proc(t: ^testing.T) {
+	g: Game
+	init_game(&g)
+	command(&g, .Tool_8)
+	testing.expect_value(t, g.tool, Tool.Manure)
+	g.cursor_x, g.cursor_y = 3, 3
+	testing.expect(t, !act(&g)) // already rich
+	testing.expect(t, .Denied in g.events)
+	testing.expect(t, !manure(&g, 0, 0)) // wild land
+	soil_at(&g, 3, 3)^ = {}
+	plant(&g, 3, 3, .Carrot) // works under a growing crop too
+	money := g.money
+	testing.expect(t, act(&g))
+	testing.expect_value(t, g.money, money - MANURE_COST)
+	testing.expect_value(t, soil_at(&g, 3, 3)^, [Nutrient]u8{.N = MANURE_AMOUNT, .P = MANURE_AMOUNT, .K = MANURE_AMOUNT})
+	testing.expect_value(t, cell_at(&g, 3, 3).kind, Cell_Kind.Crop)
+	testing.expect_value(t, sound_for(g.events), Sfx.Manure)
+	soil_at(&g, 4, 4)^ = {}
+	g.money = MANURE_COST - 1
+	testing.expect(t, !manure(&g, 4, 4))
+}
+
+@(test)
+ripe_crops_rot :: proc(t: ^testing.T) {
+	for crop in Crop {
+		g: Game
+		init_game(&g)
+		own_all(&g)
+		g.money = 100
+		place_scarecrow(&g, 1, 1)
+		soil_at(&g, 0, 0)^ = {.N = 2, .P = 2, .K = 2}
+		cell_at(&g, 0, 0)^ = {owned = true, kind = .Crop, crop = crop, progress = u8(2 * CROPS[crop].grow)}
+		for _ in 0 ..< CROPS[crop].keep - 1 {
+			cell_at(&g, 1, 1).health = SCARECROW_HEALTH
+			end_turn(&g)
+			testing.expectf(t, ripe(cell_at(&g, 0, 0)^), "%v rotted early", crop)
+		}
+		g.events = {}
+		end_turn(&g)
+		testing.expect_value(t, cell_at(&g, 0, 0)^, Cell{owned = true})
+		testing.expect(t, .Rotted in g.events)
+		// paid for, then compost
+		for n in Nutrient {
+			want := clamp(2 - CROPS[crop].uses[int(n)] + CROPS[crop].gives[int(n)], 0, SOIL_MAX)
+			want = min(want + COMPOST, SOIL_MAX)
+			testing.expect_value(t, int(soil_at(&g, 0, 0)[n]), want)
+		}
+	}
+	// harvested on its last turn, it is still good
+	g: Game
+	init_game(&g)
+	own_all(&g)
+	cell_at(&g, 0, 0)^ = {owned = true, kind = .Crop, crop = .Cabbage, progress = u8(2 * CROPS[.Cabbage].grow), rot = u8(CROPS[.Cabbage].keep - 1)}
+	testing.expect(t, harvest(&g, 0, 0))
+	testing.expect_value(t, g.barn[.Cabbage], 1)
+}
+
+@(test)
+rot_makes_its_own_sound :: proc(t: ^testing.T) {
+	testing.expect_value(t, sound_for({.Rotted}), Sfx.Rot)
+}
+
+@(test)
+bad_soil_or_rot_in_a_save_is_refused :: proc(t: ^testing.T) {
+	g: Game
+	init_game(&g)
+	buf: [SAVE_SIZE]u8
+	back: Game
+	g.soil[5][.K] = SOIL_MAX + 1
+	write_save(&g, buf[:])
+	testing.expect(t, !read_save(&back, buf[:]))
+	g.soil[5][.K] = SOIL_MAX
+	g.field[27] = {owned = true, kind = .Crop, crop = .Corn, progress = 14, rot = u8(CROPS[.Corn].keep)}
+	write_save(&g, buf[:])
+	testing.expect(t, !read_save(&back, buf[:]))
+	g.field[27].rot = 0
 	write_save(&g, buf[:])
 	testing.expect(t, read_save(&back, buf[:]))
 }

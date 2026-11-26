@@ -2,10 +2,10 @@
 // Urizen 1-bit tileset by vurmux, https://vurmux.itch.io/urizen-onebit-tileset, CC0 1.0.
 package game
 
-GFX_COUNT :: 15
+GFX_COUNT :: 16
 
 // One 12x12 mask per picture, one bit per pixel: bit (y*12 + x) of the three u64s, 48 bits each.
-GFX := [15][3]u64{
+GFX := [16][3]u64{
 	{0x55E54A55C000, 0x15D11E38055C, 0x13411411411D}, // Farmer (111, 0)
 	{0x002000000000, 0x1F83DC38E006, 0x000040020020}, // Seedling (1, 9)
 	{0x71C208514000, 0x514000000208, 0x00020871C208}, // Sprouts (5, 24)
@@ -21,4 +21,5 @@ GFX := [15][3]u64{
 	{0x092008000000, 0x228224444054, 0x0000880A82A8}, // Wild (15, 5)
 	{0x044000000000, 0x17C65407C06C, 0x1FA27C27C138}, // Cat (1, 14)
 	{0x262180000000, 0x0E00701F825C, 0x6F89609E85F0}, // Rat (3, 14)
+	{0x1103F81F0000, 0x3183581100E0, 0x0001F03D83D8}, // Manure (14, 20)
 }

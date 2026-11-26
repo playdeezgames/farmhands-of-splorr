@@ -32,6 +32,7 @@ COLOR_GREEN :: 6
 COLOR_SOIL :: 7 // replaces Sweetie-16's teal
 COLOR_SOIL_DARK :: 8 // replaces Sweetie-16's navy
 COLOR_BLUE :: 9
+COLOR_SKY :: 10
 COLOR_CYAN :: 11
 COLOR_WHITE :: 12
 COLOR_LIGHT :: 13
@@ -55,6 +56,7 @@ Gfx :: enum {
 	Wild,
 	Cat,
 	Rat,
+	Manure,
 }
 
 cls :: proc(f: ^Frame, c: u8) {

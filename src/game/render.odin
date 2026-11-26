@@ -8,7 +8,7 @@ FIELD_X :: 12
 FIELD_Y :: 24
 PANEL_X :: 220
 ROWS_Y :: 38 // first tool row
-ROW_H :: 14
+ROW_H :: 12
 LOG_Y :: 228
 LOG_H :: 10
 
@@ -39,7 +39,7 @@ BUTTONS := [?]Button {
 }
 
 tool_row :: proc(t: Tool) -> Rect {
-	return {PANEL_X, ROWS_Y + int(t) * ROW_H - 2, 256, ROW_H}
+	return {PANEL_X, ROWS_Y - 2 + int(t) * ROW_H, 256, ROW_H}
 }
 
 TOOL_GFX := [Tool]Gfx {
@@ -50,6 +50,7 @@ TOOL_GFX := [Tool]Gfx {
 	.Corn    = .Corn,
 	.Pumpkin = .Pumpkin,
 	.Scarecrow = .Scarecrow,
+	.Manure = .Manure,
 }
 
 CROP_COLOR := [Crop]u8 {
@@ -64,8 +65,27 @@ tool_color :: proc(t: Tool) -> u8 {
 	if crop, ok := tool_crop(t); ok {
 		return CROP_COLOR[crop]
 	}
-	return t == .Scarecrow ? COLOR_ORANGE : COLOR_WHITE
+	#partial switch t {
+	case .Scarecrow:
+		return COLOR_ORANGE
+	case .Manure:
+		return COLOR_LIGHT
+	}
+	return COLOR_WHITE
 }
+
+tool_command :: proc(t: Tool) -> Command {
+	#partial switch t {
+	case .Scarecrow:
+		return .Tool_7
+	case .Manure:
+		return .Tool_8
+	}
+	return Command(u8(Command.Tool_1) + u8(t))
+}
+
+// The colours of the soil bars: N, P, K.
+NUTRIENT_COLOR := [Nutrient]u8{.N = COLOR_LIME, .P = COLOR_SKY, .K = COLOR_YELLOW}
 
 // A click or tap at framebuffer pixel (x, y).
 pointer :: proc(g: ^Game, x, y: int) {
@@ -80,7 +100,7 @@ pointer :: proc(g: ^Game, x, y: int) {
 	}
 	for t in Tool {
 		if inside(tool_row(t), x, y) {
-			command(g, t == .Scarecrow ? .Tool_7 : Command(u8(Command.Tool_1) + u8(t)))
+			command(g, tool_command(t))
 			return
 		}
 	}
@@ -176,6 +196,14 @@ draw_cell :: proc(f: ^Frame, g: ^Game, x, y: int) {
 	switch c.kind {
 	case .Empty:
 		draw_gfx_scaled(f, .Soil, px, py, 2, COLOR_SOIL)
+		// N, P and K as three small bars in the corner
+		soil := soil_at(g, x, y)
+		for n, i in Nutrient {
+			h := 2 * int(soil[n])
+			bx := px + CELL - 11 + int(i) * 3
+			fill_rect(f, bx, py + CELL - 3 - 2 * SOIL_MAX, 2, 2 * SOIL_MAX, COLOR_BLACK)
+			fill_rect(f, bx, py + CELL - 3 - h, 2, h, NUTRIENT_COLOR[n])
+		}
 	case .Scarecrow:
 		draw_gfx_scaled(f, .Scarecrow, px, py, 2, COLOR_ORANGE)
 		// health bar along the bottom; red when nearly gone
@@ -194,23 +222,34 @@ draw_cell :: proc(f: ^Frame, g: ^Game, x, y: int) {
 	case .Crop:
 		grow := CROPS[c.crop].grow
 		if ripe(c) {
-			draw_gfx_scaled(f, TOOL_GFX[Tool(u8(c.crop) + 1)], px, py, 2, CROP_COLOR[c.crop])
-		} else {
-			stage: Gfx = int(c.progress) * 2 < grow ? .Seedling : .Sprouts
-			draw_gfx_scaled(f, stage, px, py, 2, stage == .Seedling ? COLOR_GREEN : COLOR_LIME)
-			// growth bar along the bottom
-			w := (CELL - 4) * int(c.progress) / grow
+			// ripe: a bar for the turns left before it rots; dull on its last turn
+			keep := CROPS[c.crop].keep
+			left := keep - int(c.rot)
+			draw_gfx_scaled(f, TOOL_GFX[Tool(u8(c.crop) + 1)], px, py, 2, left <= 1 ? COLOR_MID : CROP_COLOR[c.crop])
 			fill_rect(f, px + 2, py + CELL - 3, CELL - 4, 1, COLOR_SOIL)
-			fill_rect(f, px + 2, py + CELL - 3, w, 1, COLOR_YELLOW)
+			fill_rect(f, px + 2, py + CELL - 3, (CELL - 4) * left / keep, 1, left <= 1 ? COLOR_RED : COLOR_ORANGE)
+		} else {
+			stage: Gfx = int(c.progress) < grow ? .Seedling : .Sprouts
+			draw_gfx_scaled(f, stage, px, py, 2, stage == .Seedling ? COLOR_GREEN : COLOR_LIME)
+			// growth bar along the bottom; red when the soil is short
+			_, short := short_of(g, x, y)
+			w := (CELL - 4) * int(c.progress) / (2 * grow)
+			fill_rect(f, px + 2, py + CELL - 3, CELL - 4, 1, COLOR_SOIL)
+			fill_rect(f, px + 2, py + CELL - 3, max(w, 1), 1, short ? COLOR_RED : COLOR_YELLOW)
 		}
 	}
 }
 
 draw_tools :: proc(f: ^Frame, g: ^Game) {
-	print(f, "   In hand   Cost Grow Sells Seeds Barn", PANEL_X, 26, COLOR_MID)
+	for h in ([?]struct {
+			label: string,
+			x:     int,
+		}{{"In hand", 26}, {"Buy", 86}, {"Grow", 108}, {"Sell", 136}, {"Soil", 164}, {"Seed", 196}, {"Barn", 224}}) {
+		print(f, h.label, PANEL_X + h.x, 26, COLOR_MID)
+	}
 	for t in Tool {
 		r := tool_row(t)
-		y := r.y + 2
+		y := r.y
 		if t == g.tool {
 			fill_rect(f, r.x, r.y, r.w, r.h, COLOR_DARK)
 		}
@@ -218,43 +257,51 @@ draw_tools :: proc(f: ^Frame, g: ^Game) {
 		add_int(&key, int(t) + 1)
 		print(f, text_of(&key), PANEL_X + 2, y + 2, COLOR_MID)
 		draw_gfx(f, TOOL_GFX[t], PANEL_X + 10, y, tool_color(t))
-		if t == .Scarecrow {
-			print(f, "Scarecrow", PANEL_X + 26, y + 2, COLOR_WHITE)
-			cost: Text
-			add(&cost, "$")
-			add_int(&cost, SCARECROW_COST)
-			print(f, text_of(&cost), PANEL_X + 84, y + 2, COLOR_YELLOW)
-			area: Text
-			add(&area, "guards ")
-			add_int(&area, SCARECROW_RADIUS * 2 + 1)
-			add(&area, "x")
-			add_int(&area, SCARECROW_RADIUS * 2 + 1)
-			print(f, text_of(&area), PANEL_X + 110, y + 2, COLOR_LIGHT)
-			continue
-		}
-		crop, ok := tool_crop(t)
-		if !ok {
-			print(f, "Farmhand", PANEL_X + 26, y + 2, COLOR_WHITE)
-			cost: Text
-			add(&cost, "$")
-			add_int(&cost, FARMER_COST)
-			print(f, text_of(&cost), PANEL_X + 80, y + 2, COLOR_YELLOW)
-			print(f, "x2 growth, eats", PANEL_X + 110, y + 2, COLOR_LIGHT)
-			continue
-		}
-		info := CROPS[crop]
-		print(f, info.name, PANEL_X + 26, y + 2, COLOR_WHITE)
 		col :: proc(f: ^Frame, prefix: string, v: int, x, y: int, color: u8) {
 			t: Text
 			add(&t, prefix)
 			add_int(&t, v)
 			print(f, text_of(&t), x, y, color)
 		}
-		col(f, "$", info.cost, PANEL_X + 80, y + 2, COLOR_YELLOW)
-		col(f, "", info.grow, PANEL_X + 110, y + 2, COLOR_LIGHT)
-		col(f, "$", info.price, PANEL_X + 140, y + 2, COLOR_YELLOW)
-		col(f, "", g.seeds[crop], PANEL_X + 182, y + 2, g.seeds[crop] > 0 ? COLOR_LIME : COLOR_MID)
-		col(f, "", g.barn[crop], PANEL_X + 218, y + 2, g.barn[crop] > 0 ? COLOR_WHITE : COLOR_MID)
+		crop, is_crop := tool_crop(t)
+		if !is_crop {
+			name, note: string
+			price := 0
+			#partial switch t {
+			case .Farmer:
+				name, price, note = "Farmhand", FARMER_COST, "x2 growth, eats"
+			case .Scarecrow:
+				name, price, note = "Scarecrow", SCARECROW_COST, "guards 5x5, wears"
+			case .Manure:
+				name, price, note = "Manure", MANURE_COST, "refills the soil"
+			}
+			print(f, name, PANEL_X + 26, y + 2, COLOR_WHITE)
+			col(f, "$", price, PANEL_X + 86, y + 2, COLOR_YELLOW)
+			print(f, note, PANEL_X + 114, y + 2, COLOR_LIGHT)
+			continue
+		}
+		info := CROPS[crop]
+		print(f, info.name, PANEL_X + 26, y + 2, COLOR_WHITE)
+		col(f, "$", info.cost, PANEL_X + 86, y + 2, COLOR_YELLOW)
+		col(f, "", info.grow, PANEL_X + 114, y + 2, COLOR_LIGHT)
+		col(f, "$", info.price, PANEL_X + 136, y + 2, COLOR_YELLOW)
+		// what it takes from the soil and puts back, e.g. "-N2+K" (an amount of 1 is left out)
+		soil: Text
+		for sign in ([?]string{"-", "+"}) {
+			for n in Nutrient {
+				v := sign == "-" ? info.uses[int(n)] : info.gives[int(n)]
+				if v > 0 {
+					add(&soil, sign)
+					add(&soil, NUTRIENT_NAME[n])
+					if v > 1 {
+						add_int(&soil, v)
+					}
+				}
+			}
+		}
+		print(f, text_of(&soil), PANEL_X + 162, y + 2, COLOR_LIGHT)
+		col(f, "", g.seeds[crop], PANEL_X + 202, y + 2, g.seeds[crop] > 0 ? COLOR_LIME : COLOR_MID)
+		col(f, "", g.barn[crop], PANEL_X + 228, y + 2, g.barn[crop] > 0 ? COLOR_WHITE : COLOR_MID)
 	}
 	draw_gfx(f, .Barn, PANEL_X, 136, COLOR_ORANGE)
 	t: Text
@@ -311,6 +358,17 @@ draw_buttons :: proc(f: ^Frame, g: ^Game) {
 	}
 }
 
+// "N4 P2 K1" for the square at (x, y).
+add_soil_text :: proc(t: ^Text, g: ^Game, x, y: int) {
+	for n, i in Nutrient {
+		if i > 0 {
+			add(t, " ")
+		}
+		add(t, NUTRIENT_NAME[n])
+		add_int(t, int(soil_at(g, x, y)[n]))
+	}
+}
+
 // What is under the cursor, or what is in hand.
 draw_status :: proc(f: ^Frame, g: ^Game) {
 	c := cell_at(g, g.cursor_x, g.cursor_y)^
@@ -331,8 +389,14 @@ draw_status :: proc(f: ^Frame, g: ^Game) {
 	} else {
 		switch c.kind {
 		case .Empty:
-			add(&t, "Soil. Space: ")
-			if crop, ok := tool_crop(g.tool); ok {
+			add(&t, "Soil ")
+			add_soil_text(&t, g, g.cursor_x, g.cursor_y)
+			add(&t, ". Space: ")
+			if g.tool == .Manure {
+				add(&t, "manure ($")
+				add_int(&t, MANURE_COST)
+				add(&t, ")")
+			} else if crop, ok := tool_crop(g.tool); ok {
 				add(&t, "plant ")
 				add(&t, CROPS[crop].name)
 				if g.seeds[crop] > 0 {
@@ -343,33 +407,46 @@ draw_status :: proc(f: ^Frame, g: ^Game) {
 					add(&t, ")")
 				}
 			} else if g.tool == .Scarecrow {
-				add(&t, "put up a scarecrow ($")
+				add(&t, "scarecrow ($")
 				add_int(&t, SCARECROW_COST)
 				add(&t, ")")
 			} else {
-				add(&t, "hire a farmhand ($")
+				add(&t, "hire hand ($")
 				add_int(&t, FARMER_COST)
 				add(&t, ")")
 			}
 		case .Crop:
 			add(&t, CROPS[c.crop].name)
-			if ripe(c) {
-				add(&t, ", ripe. Space: harvest")
+			if g.tool == .Manure {
+				add(&t, " ")
+				add_soil_text(&t, g, g.cursor_x, g.cursor_y)
+				add(&t, ". Space: manure ($")
+				add_int(&t, MANURE_COST)
+				add(&t, ")")
+			} else if ripe(c) {
+				add(&t, ", ripe, rots in ")
+				add_int(&t, CROPS[c.crop].keep - int(c.rot))
+				add(&t, ". Space: harvest")
 			} else {
-				add(&t, ": ")
-				add_int(&t, int(c.progress))
+				add(&t, " ")
+				add_halves(&t, int(c.progress))
 				add(&t, "/")
 				add_int(&t, CROPS[c.crop].grow)
-				add(&t, ", +")
-				add_int(&t, growth_at(g, g.cursor_x, g.cursor_y))
-				add(&t, " a turn")
-			}
-			if guarded(g, g.cursor_x, g.cursor_y) {
-				add(&t, ", guarded")
-			} else {
-				add(&t, ", crows ")
-				add_int(&t, CROW_PERCENT)
-				add(&t, "%")
+				add(&t, " +")
+				step := growth_at(g, g.cursor_x, g.cursor_y)
+				n, short := short_of(g, g.cursor_x, g.cursor_y)
+				add_halves(&t, short ? step : 2 * step)
+				if short {
+					add(&t, ", short of ")
+					add(&t, NUTRIENT_NAME[n])
+				}
+				if guarded(g, g.cursor_x, g.cursor_y) {
+					add(&t, ", guarded")
+				} else {
+					add(&t, ", crows ")
+					add_int(&t, CROW_PERCENT)
+					add(&t, "%")
+				}
 			}
 		case .Farmer:
 			if c.hunger > 0 {
