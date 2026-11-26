@@ -10,6 +10,7 @@ Cell_Kind :: enum u8 {
 	Empty,
 	Crop,
 	Farmer,
+	Scarecrow,
 }
 
 Cell :: struct {
@@ -19,6 +20,7 @@ Cell :: struct {
 	progress: u8, // growth so far; ripe at CROPS[crop].grow
 	hunger:   u8, // farmer: hungry turns in a row
 	fed:      bool, // farmer: ate this turn, so tends the neighbours
+	moved:    bool, // farmer: set down this turn, so settles in and works from the next
 }
 
 // What the player has in hand: a farmer to hire or a crop to plant.
@@ -29,10 +31,11 @@ Tool :: enum u8 {
 	Cabbage,
 	Corn,
 	Pumpkin,
+	Scarecrow,
 }
 
 tool_crop :: proc(t: Tool) -> (Crop, bool) {
-	if t == .Farmer {
+	if t == .Farmer || t == .Scarecrow {
 		return .Carrot, false
 	}
 	return Crop(u8(t) - 1), true
@@ -60,6 +63,8 @@ Command :: enum u8 {
 	Tool_6,
 	Expand_Barn,
 	Buy_Cat,
+	Dismiss, // let the farmhand or scarecrow under the cursor (or in hand) go
+	Tool_7,
 }
 
 LOG_LINES :: 4
@@ -87,6 +92,11 @@ Event :: enum u8 {
 	Rats,
 	Cat,
 	Built,
+	Wandered,
+	Crows,
+	Placed,
+	Carried,
+	Dismissed,
 }
 
 Game :: struct {
@@ -109,7 +119,12 @@ Game :: struct {
 	land_bought: int, // squares bought so far; each costs more than the last
 	barn_level:  int, // expansions bought; each holds BARN_STEP more and draws more rats
 	cats:        int,
-	rng:         Rng, // the rats
+	rng:         Rng, // the rats, the cats and the crows
+	// A farmhand or scarecrow picked up: what it was and where it came from.
+	carrying:    Cell_Kind, // .Empty when nothing is in hand
+	carry_x:     int,
+	carry_y:     int,
+	carry_cell:  Cell,
 }
 
 init_game :: proc(g: ^Game, seed: u64 = 1) {
@@ -125,8 +140,8 @@ init_game :: proc(g: ^Game, seed: u64 = 1) {
 	}
 	say(g, "Welcome to the farm. Plant crops, hire farmhands, feed them.", COLOR_YELLOW)
 	say(g, "Farmhands make the crops around them grow twice as fast.", COLOR_LIGHT)
-	say(g, "Buy wild land next to yers to grow the farm; each costs more.", COLOR_LIGHT)
-	say(g, "The barn is small and rats like it. Cats help.", COLOR_LIGHT)
+	say(g, "Buy land next to yers; each costs more. Crows eat crops: scarecrows!", COLOR_LIGHT)
+	say(g, "The barn is small and rats like it. Cats help, but they wander.", COLOR_LIGHT)
 }
 
 cell_at :: proc(g: ^Game, x, y: int) -> ^Cell {
@@ -162,6 +177,9 @@ log_text :: proc(l: ^Log_Line) -> string {
 // Acts on the cursor cell with the tool in hand.
 act :: proc(g: ^Game) -> bool {
 	c := cell_at(g, g.cursor_x, g.cursor_y)
+	if g.carrying != .Empty {
+		return set_down(g, g.cursor_x, g.cursor_y)
+	}
 	if !c.owned {
 		return buy_land(g, g.cursor_x, g.cursor_y)
 	}
@@ -181,26 +199,136 @@ act :: proc(g: ^Game) -> bool {
 		say(g, text_of(&t), COLOR_LIGHT)
 		g.events += {.Denied}
 		return false
-	case .Farmer:
-		t: Text
-		add(&t, "A farmhand. ")
-		if c.hunger == 0 {
-			add(&t, "Fed and working.")
-		} else {
-			add(&t, "Hungry for ")
-			add_int(&t, int(c.hunger))
-			add(&t, c.hunger == 1 ? " turn" : " turns")
-			add(&t, "; not working.")
-		}
-		say(g, text_of(&t), COLOR_LIGHT)
-		g.events += {.Denied}
-		return false
+	case .Farmer, .Scarecrow:
+		return pick_up(g, g.cursor_x, g.cursor_y)
 	case .Empty:
 	}
 	if crop, ok := tool_crop(g.tool); ok {
 		return plant(g, g.cursor_x, g.cursor_y, crop)
 	}
+	if g.tool == .Scarecrow {
+		return place_scarecrow(g, g.cursor_x, g.cursor_y)
+	}
 	return hire(g, g.cursor_x, g.cursor_y)
+}
+
+// --- Moving and letting go: a farmhand or scarecrow is picked up, then set down on empty soil.
+
+pick_up :: proc(g: ^Game, x, y: int) -> bool {
+	c := cell_at(g, x, y)
+	if g.carrying != .Empty || (c.kind != .Farmer && c.kind != .Scarecrow) {
+		return false
+	}
+	g.carrying = c.kind
+	g.carry_x, g.carry_y = x, y
+	g.carry_cell = c^
+	c^ = {owned = true}
+	say(g, g.carrying == .Farmer ? "Picked up a farmhand. Enter on empty soil to set them down." : "Picked up the scarecrow. Enter on empty soil to set it down.", COLOR_CYAN)
+	g.events += {.Carried}
+	return true
+}
+
+// Sets down what is in hand. Back where it came from is not a move; a farmhand set down anywhere
+// else settles in and works from the next turn.
+set_down :: proc(g: ^Game, x, y: int) -> bool {
+	if g.carrying == .Empty {
+		return false
+	}
+	c := cell_at(g, x, y)
+	if !c.owned || c.kind != .Empty {
+		say(g, "Set it down on empty soil first.", COLOR_RED)
+		g.events += {.Denied}
+		return false
+	}
+	home := x == g.carry_x && y == g.carry_y
+	c^ = g.carry_cell
+	if g.carrying == .Farmer {
+		if home {
+			say(g, "Put the farmhand back.", COLOR_CYAN)
+		} else {
+			c.moved = true
+			c.fed = false
+			say(g, "Set the farmhand down. They settle in and work next turn.", COLOR_CYAN)
+		}
+	} else {
+		say(g, "Set the scarecrow down.", COLOR_CYAN)
+	}
+	g.carrying = .Empty
+	g.carry_cell = {}
+	g.events += {.Carried}
+	return true
+}
+
+// Whatever is in hand goes back where it came from (end of turn).
+put_back :: proc(g: ^Game) {
+	if g.carrying == .Empty {
+		return
+	}
+	cell_at(g, g.carry_x, g.carry_y)^ = g.carry_cell
+	say(g, g.carrying == .Farmer ? "Put the farmhand back." : "Put the scarecrow back.", COLOR_CYAN)
+	g.carrying = .Empty
+	g.carry_cell = {}
+}
+
+// Lets go of what is in hand, or of the farmhand or scarecrow under the cursor. No refund.
+dismiss :: proc(g: ^Game) -> bool {
+	kind := g.carrying
+	if kind != .Empty {
+		g.carrying = .Empty
+		g.carry_cell = {}
+	} else {
+		c := cell_at(g, g.cursor_x, g.cursor_y)
+		if c.kind != .Farmer && c.kind != .Scarecrow {
+			say(g, "Nothing here to let go.", COLOR_RED)
+			g.events += {.Denied}
+			return false
+		}
+		kind = c.kind
+		c^ = {owned = true}
+	}
+	say(g, kind == .Farmer ? "Let a farmhand go." : "Took down the scarecrow.", COLOR_ORANGE)
+	g.events += {.Dismissed}
+	return true
+}
+
+place_scarecrow :: proc(g: ^Game, x, y: int) -> bool {
+	c := cell_at(g, x, y)
+	if c.kind != .Empty || !c.owned {
+		return false
+	}
+	t: Text
+	if g.money < SCARECROW_COST {
+		add(&t, "A scarecrow costs $")
+		add_int(&t, SCARECROW_COST)
+		add(&t, ".")
+		say(g, text_of(&t), COLOR_RED)
+		g.events += {.Denied}
+		return false
+	}
+	g.money -= SCARECROW_COST
+	c^ = {owned = true, kind = .Scarecrow}
+	add(&t, "Put up a scarecrow for $")
+	add_int(&t, SCARECROW_COST)
+	add(&t, ". It guards the ")
+	add_int(&t, SCARECROW_RADIUS * 2 + 1)
+	add(&t, "x")
+	add_int(&t, SCARECROW_RADIUS * 2 + 1)
+	add(&t, " around it.")
+	say(g, text_of(&t), COLOR_CYAN)
+	g.events += {.Placed}
+	return true
+}
+
+// True when a scarecrow stands within SCARECROW_RADIUS of (x, y) across and down.
+guarded :: proc(g: ^Game, x, y: int) -> bool {
+	for sy in max(0, y - SCARECROW_RADIUS) ..= min(FIELD_H - 1, y + SCARECROW_RADIUS) {
+		for sx in max(0, x - SCARECROW_RADIUS) ..= min(FIELD_W - 1, x + SCARECROW_RADIUS) {
+			if cell_at(g, sx, sy).kind == .Scarecrow {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // Plants a crop on an empty cell, using a seed from the barn if there is one, or paying for it.
@@ -559,6 +687,7 @@ growth_at :: proc(g: ^Game, x, y: int) -> int {
 
 // The end of a turn: farmers eat (or go hungry, or quit), then crops grow.
 end_turn :: proc(g: ^Game) {
+	put_back(g)
 	fed, hungry, quit := 0, 0, 0
 	for &c in g.field {
 		if c.kind != .Farmer {
@@ -573,7 +702,7 @@ end_turn :: proc(g: ^Game) {
 		}
 		if ate {
 			c.hunger = 0
-			c.fed = true
+			c.fed = !c.moved // set down this turn: eats, but works from the next
 			fed += 1
 		} else {
 			c.hunger += 1
@@ -585,10 +714,34 @@ end_turn :: proc(g: ^Game) {
 				hungry += 1
 			}
 		}
+		c.moved = false
 	}
 	// Roll every turn, so the rolls stay in step whatever is in the barn.
 	rats := rng_int(&g.rng, 100) < rat_chance(g) && (barn_count(g) > 0 || g.pantry > 0)
 	rats_ate := rats ? rats_feast(g) : 0
+	// Then the cats roll to wander off (this turn's cats have already guarded the barn).
+	wandered := 0
+	for _ in 0 ..< g.cats {
+		if rng_int(&g.rng, 100) < CAT_WANDER_PERCENT {
+			wandered += 1
+		}
+	}
+	g.cats -= wandered
+	// Then the crows, at every crop no scarecrow guards.
+	crowed, crowed_crop := 0, Crop.Carrot
+	for y in 0 ..< FIELD_H {
+		for x in 0 ..< FIELD_W {
+			c := cell_at(g, x, y)
+			if c.kind != .Crop || guarded(g, x, y) {
+				continue
+			}
+			if rng_int(&g.rng, 100) < CROW_PERCENT {
+				crowed += 1
+				crowed_crop = c.crop
+				c^ = {owned = true}
+			}
+		}
+	}
 	ripened := 0
 	for y in 0 ..< FIELD_H {
 		for x in 0 ..< FIELD_W {
@@ -628,6 +781,27 @@ end_turn :: proc(g: ^Game) {
 		add(&t4, rats_ate == 1 ? " crop!" : " crops!")
 		say(g, text_of(&t4), COLOR_RED)
 		g.events += {.Rats}
+	}
+	if crowed > 0 {
+		t5: Text
+		if crowed == 1 {
+			add(&t5, "Crows ate a ")
+			add(&t5, CROPS[crowed_crop].name)
+			add(&t5, "!")
+		} else {
+			add(&t5, "Crows ate ")
+			add_int(&t5, crowed)
+			add(&t5, " crops!")
+		}
+		say(g, text_of(&t5), COLOR_RED)
+		g.events += {.Crows}
+	}
+	if wandered > 0 {
+		t6: Text
+		add_int(&t6, wandered)
+		add(&t6, wandered == 1 ? " cat wandered off." : " cats wandered off.")
+		say(g, text_of(&t6), COLOR_ORANGE)
+		g.events += {.Wandered}
 	}
 	if hungry > 0 {
 		t2: Text
@@ -702,6 +876,11 @@ command :: proc(g: ^Game, c: Command) {
 		expand_barn(g)
 	case .Buy_Cat:
 		buy_cat(g)
+	case .Dismiss:
+		dismiss(g)
+	case .Tool_7:
+		g.tool = .Scarecrow
+		g.events += {.Moved}
 	}
 }
 

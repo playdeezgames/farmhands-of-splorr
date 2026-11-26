@@ -41,6 +41,10 @@ RAT_BASE_PERCENT :: 5 // chance each turn that rats eat half the barn
 RAT_STEP_PERCENT :: 5 // more chance for each expansion
 CAT_COST :: 15
 CAT_DETER_PERCENT :: 3 // less chance for each cat
+CAT_WANDER_PERCENT :: 10 // chance each turn that a cat wanders off
+CROW_PERCENT :: 3 // chance each turn that crows eat an unguarded crop
+SCARECROW_COST :: 20
+SCARECROW_RADIUS :: 2 // guards the square this many cells around it
 
 Terrain :: enum u8 {
 	Wild,

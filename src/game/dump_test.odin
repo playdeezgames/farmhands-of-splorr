@@ -7,7 +7,7 @@ import "core:testing"
 // Writes a frame of the game as a PPM, for screenshots and the cover:
 // odin test src/game -collection:tggd=src -define:DUMP_PLAY=/path/frame.ppm [-define:DUMP_SCENE=n]
 // Scenes: 2 (the default, also the cover) a farm in progress; 1 a new farm a couple of turns in;
-// 3 the farm in progress the moment the rats get into the barn.
+// 3 the farm in progress on a bad turn: rats in the barn, crows in the field, a cat gone.
 DUMP_PLAY :: #config(DUMP_PLAY, "")
 DUMP_SCENE :: #config(DUMP_SCENE, 2)
 
@@ -41,6 +41,8 @@ dump_play :: proc(t: ^testing.T) {
 			add_int(&line, ate)
 			add(&line, " crops!")
 			say(g, text_of(&line), COLOR_RED)
+			say(g, "Crows ate a Corn!", COLOR_RED)
+			say(g, "1 cat wandered off.", COLOR_ORANGE)
 		}
 		f := new(Frame)
 		defer free(f)
@@ -56,7 +58,8 @@ dump_play :: proc(t: ^testing.T) {
 	}
 }
 
-// A farm some way along: about a third of the field bought and planted, two farmhands, a bigger barn, two cats.
+// A farm some way along: about a third of the field bought and planted, two farmhands, a scarecrow,
+// a bigger barn, two cats.
 dump_farm :: proc(g: ^Game) {
 	g.money = 240
 	for y in 1 ..< 6 {
@@ -72,6 +75,7 @@ dump_farm :: proc(g: ^Game) {
 	g.barn[.Carrot] = 20
 	hire(g, 3, 2)
 	hire(g, 4, 4)
+	place_scarecrow(g, 2, 3)
 	crops := [?]Crop{.Carrot, .Wheat, .Cabbage, .Corn, .Pumpkin}
 	i := 0
 	for y in 0 ..< FIELD_H {

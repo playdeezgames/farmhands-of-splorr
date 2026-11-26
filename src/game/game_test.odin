@@ -184,6 +184,8 @@ commands_and_pointer_route :: proc(t: ^testing.T) {
 	command(&g, .Tool_1)
 	testing.expect_value(t, g.tool, Tool.Farmer)
 	command(&g, .Prev_Tool)
+	testing.expect_value(t, g.tool, Tool.Scarecrow)
+	command(&g, .Prev_Tool)
 	testing.expect_value(t, g.tool, Tool.Pumpkin)
 	command(&g, .Sell) // nothing in the barn
 	testing.expect(t, .Denied in g.events)
@@ -340,6 +342,8 @@ a_full_barn_sells_the_harvest :: proc(t: ^testing.T) {
 	own_all(&g)
 	g.barn[.Wheat] = BARN_CAPACITY
 	plant(&g, 0, 0, .Carrot)
+	g.money += SCARECROW_COST
+	place_scarecrow(&g, 1, 1) // no crows
 	g.rng = {} // rats or not, the barn is refilled below
 	for _ in 0 ..< CROPS[.Carrot].grow {
 		end_turn(&g)
@@ -424,8 +428,8 @@ rats_come_about_as_often_as_the_chance_says :: proc(t: ^testing.T) {
 	expected := TURNS * chance / 100
 	testing.expectf(t, abs(visits - expected) < expected / 4, "%d visits, expected about %d", visits, expected)
 	// With enough cats, never.
-	g.cats = 100
 	for _ in 0 ..< 200 {
+		g.cats = 100 // some wander off every turn
 		g.barn[.Pumpkin] = 2
 		end_turn(&g)
 		testing.expect(t, .Rats not_in g.events)
@@ -449,4 +453,260 @@ barn_and_cat_commands :: proc(t: ^testing.T) {
 		}
 	}
 	testing.expect_value(t, g.cats, 2)
+}
+
+// --- Cats wander, crows, scarecrows, moving and letting go (November 26, 2026).
+
+@(test)
+cats_wander_about_as_often_as_the_chance_says :: proc(t: ^testing.T) {
+	g: Game
+	init_game(&g, 777)
+	left := 0
+	TURNS :: 400
+	for _ in 0 ..< TURNS {
+		g.cats = 50
+		end_turn(&g)
+		left += 50 - g.cats
+		if g.cats < 50 {
+			testing.expect(t, .Wandered in g.events)
+		}
+		g.events = {}
+	}
+	expected := TURNS * 50 * CAT_WANDER_PERCENT / 100
+	testing.expectf(t, abs(left - expected) < expected / 5, "%d wandered, expected about %d", left, expected)
+	g.cats = 0
+	end_turn(&g)
+	testing.expect_value(t, g.cats, 0)
+	testing.expect(t, .Wandered not_in g.events)
+}
+
+@(test)
+cats_guard_the_barn_on_the_turn_they_leave :: proc(t: ^testing.T) {
+	// Rats roll first, against this turn's cats: with enough cats they never get in, even when every
+	// turn some cats wander off afterwards.
+	g: Game
+	init_game(&g, 99)
+	g.barn_level = 3
+	for _ in 0 ..< 300 {
+		g.cats = (RAT_BASE_PERCENT + RAT_STEP_PERCENT * 3) / CAT_DETER_PERCENT + 1
+		g.barn[.Carrot] = 4
+		end_turn(&g)
+		testing.expect(t, .Rats not_in g.events)
+		g.events = {}
+	}
+}
+
+@(test)
+crows_eat_unguarded_crops :: proc(t: ^testing.T) {
+	g: Game
+	init_game(&g, 4242)
+	own_all(&g)
+	eaten := 0
+	TURNS :: 300
+	for _ in 0 ..< TURNS {
+		for y in 0 ..< FIELD_H {
+			for x in 0 ..< FIELD_W {
+				cell_at(&g, x, y)^ = {owned = true, kind = .Crop, crop = .Pumpkin}
+			}
+		}
+		end_turn(&g)
+		this_turn := 0
+		for c in g.field {
+			if c.kind == .Empty {
+				this_turn += 1
+			}
+		}
+		testing.expect_value(t, .Crows in g.events, this_turn > 0)
+		eaten += this_turn
+		g.events = {}
+	}
+	expected := TURNS * FIELD_W * FIELD_H * CROW_PERCENT / 100
+	testing.expectf(t, abs(eaten - expected) < expected / 5, "%d eaten, expected about %d", eaten, expected)
+}
+
+@(test)
+a_scarecrow_guards_five_by_five :: proc(t: ^testing.T) {
+	g: Game
+	init_game(&g, 31337)
+	own_all(&g)
+	g.money = 1000
+	testing.expect(t, place_scarecrow(&g, 2, 2))
+	testing.expect_value(t, g.money, 1000 - SCARECROW_COST)
+	testing.expect(t, guarded(&g, 0, 0))
+	testing.expect(t, guarded(&g, 4, 4))
+	testing.expect(t, !guarded(&g, 5, 2))
+	testing.expect(t, !guarded(&g, 2, 5))
+	outside_eaten := 0
+	for _ in 0 ..< 500 {
+		for y in 0 ..< FIELD_H {
+			for x in 0 ..< FIELD_W {
+				c := cell_at(&g, x, y)
+				if c.kind != .Scarecrow {
+					c^ = {owned = true, kind = .Crop, crop = .Corn}
+				}
+			}
+		}
+		end_turn(&g)
+		for y in 0 ..< FIELD_H {
+			for x in 0 ..< FIELD_W {
+				if cell_at(&g, x, y).kind == .Empty {
+					testing.expectf(t, !guarded(&g, x, y), "guarded crop at %d,%d eaten", x, y)
+					outside_eaten += 1
+				}
+			}
+		}
+	}
+	testing.expect(t, outside_eaten > 0)
+}
+
+@(test)
+placing_a_scarecrow :: proc(t: ^testing.T) {
+	g: Game
+	init_game(&g)
+	command(&g, .Tool_7)
+	testing.expect_value(t, g.tool, Tool.Scarecrow)
+	// wild land is bought, not built on
+	testing.expect(t, !place_scarecrow(&g, 0, 0))
+	plant(&g, 3, 3, .Carrot)
+	testing.expect(t, !place_scarecrow(&g, 3, 3))
+	g.money = SCARECROW_COST - 1
+	testing.expect(t, !place_scarecrow(&g, 4, 4))
+	testing.expect(t, .Denied in g.events)
+	g.money = SCARECROW_COST
+	g.cursor_x, g.cursor_y = 4, 4
+	testing.expect(t, act(&g))
+	testing.expect_value(t, cell_at(&g, 4, 4).kind, Cell_Kind.Scarecrow)
+	testing.expect_value(t, g.money, 0)
+	testing.expect_value(t, sound_for(g.events), Sfx.Build)
+}
+
+@(test)
+moving_a_farmhand :: proc(t: ^testing.T) {
+	g: Game
+	init_game(&g)
+	own_all(&g)
+	g.money = 1000
+	hire(&g, 1, 1)
+	cell_at(&g, 1, 1).hunger = 1
+	g.cursor_x, g.cursor_y = 1, 1
+	testing.expect(t, act(&g)) // pick up
+	testing.expect_value(t, g.carrying, Cell_Kind.Farmer)
+	testing.expect_value(t, cell_at(&g, 1, 1).kind, Cell_Kind.Empty)
+	// while carrying, nothing else happens
+	plant(&g, 5, 5, .Carrot)
+	hire(&g, 6, 6)
+	before := g
+	g.cursor_x, g.cursor_y = 5, 5
+	testing.expect(t, !act(&g))
+	g.cursor_x, g.cursor_y = 6, 6
+	testing.expect(t, !act(&g))
+	testing.expect_value(t, cell_at(&g, 5, 5)^, before.field[5 * FIELD_W + 5])
+	testing.expect_value(t, g.money, before.money)
+	// set down elsewhere: hunger kept, settles in
+	g.cursor_x, g.cursor_y = 3, 3
+	testing.expect(t, act(&g))
+	c := cell_at(&g, 3, 3)
+	testing.expect_value(t, c.kind, Cell_Kind.Farmer)
+	testing.expect_value(t, c.hunger, 1)
+	testing.expect(t, c.moved)
+	testing.expect_value(t, g.carrying, Cell_Kind.Empty)
+	// no boost on the move turn, a boost on the next
+	plant(&g, 3, 4, .Pumpkin)
+	g.barn[.Pumpkin] = 10
+	place_scarecrow(&g, 4, 4)
+	cell_at(&g, 6, 6)^ = {owned = true}
+	end_turn(&g)
+	testing.expect_value(t, int(cell_at(&g, 3, 4).progress), 1)
+	testing.expect(t, !cell_at(&g, 3, 3).moved)
+	end_turn(&g)
+	testing.expect_value(t, int(cell_at(&g, 3, 4).progress), 1 + 1 + FARMER_BOOST)
+}
+
+@(test)
+putting_a_farmhand_back_is_not_a_move :: proc(t: ^testing.T) {
+	g: Game
+	init_game(&g)
+	own_all(&g)
+	g.money = 1000
+	hire(&g, 3, 3)
+	plant(&g, 3, 4, .Pumpkin)
+	place_scarecrow(&g, 4, 4)
+	g.barn[.Pumpkin] = 10
+	g.cursor_x, g.cursor_y = 3, 3
+	act(&g)
+	act(&g) // back where they came from
+	testing.expect(t, !cell_at(&g, 3, 3).moved)
+	end_turn(&g)
+	testing.expect_value(t, int(cell_at(&g, 3, 4).progress), 1 + FARMER_BOOST)
+	// ending the turn with a farmhand in hand puts them back
+	act(&g)
+	g.cursor_x, g.cursor_y = 0, 0
+	end_turn(&g)
+	testing.expect_value(t, g.carrying, Cell_Kind.Empty)
+	testing.expect_value(t, cell_at(&g, 3, 3).kind, Cell_Kind.Farmer)
+	testing.expect(t, !cell_at(&g, 3, 3).moved)
+}
+
+@(test)
+moving_a_scarecrow :: proc(t: ^testing.T) {
+	g: Game
+	init_game(&g)
+	own_all(&g)
+	g.money = 1000
+	place_scarecrow(&g, 0, 0)
+	g.cursor_x, g.cursor_y = 0, 0
+	testing.expect(t, act(&g))
+	testing.expect_value(t, g.carrying, Cell_Kind.Scarecrow)
+	testing.expect(t, !guarded(&g, 7, 7))
+	g.cursor_x, g.cursor_y = 7, 7
+	testing.expect(t, act(&g))
+	testing.expect(t, guarded(&g, 7, 7))
+	testing.expect(t, !guarded(&g, 0, 0))
+}
+
+@(test)
+letting_go :: proc(t: ^testing.T) {
+	g: Game
+	init_game(&g)
+	own_all(&g)
+	g.money = 1000
+	hire(&g, 2, 2)
+	place_scarecrow(&g, 5, 5)
+	money := g.money
+	g.cursor_x, g.cursor_y = 2, 2
+	command(&g, .Dismiss)
+	testing.expect(t, .Dismissed in g.events)
+	testing.expect_value(t, cell_at(&g, 2, 2).kind, Cell_Kind.Empty)
+	testing.expect_value(t, g.money, money)
+	testing.expect_value(t, sound_for(g.events), Sfx.Dismiss)
+	command(&g, .Dismiss) // soil now
+	testing.expect(t, .Denied in g.events)
+	g.cursor_x, g.cursor_y = 5, 5
+	command(&g, .Confirm) // pick up the scarecrow
+	g.cursor_x, g.cursor_y = 0, 0
+	command(&g, .Dismiss)
+	testing.expect_value(t, g.carrying, Cell_Kind.Empty)
+	testing.expect_value(t, cell_at(&g, 5, 5).kind, Cell_Kind.Empty)
+	testing.expect_value(t, cell_at(&g, 0, 0).kind, Cell_Kind.Empty)
+}
+
+@(test)
+saving_while_carrying :: proc(t: ^testing.T) {
+	g: Game
+	init_game(&g)
+	own_all(&g)
+	g.money = 1000
+	hire(&g, 2, 2)
+	g.cursor_x, g.cursor_y = 2, 2
+	act(&g)
+	buf: [SAVE_SIZE]u8
+	testing.expect_value(t, write_save(&g, buf[:]), SAVE_SIZE)
+	back: Game
+	testing.expect(t, read_save(&back, buf[:]))
+	testing.expect_value(t, back.carrying, Cell_Kind.Farmer)
+	testing.expect_value(t, back.carry_x, 2)
+	// a save whose carry origin is taken is refused
+	g.field[2 * FIELD_W + 2] = {owned = true, kind = .Scarecrow}
+	write_save(&g, buf[:])
+	testing.expect(t, !read_save(&back, buf[:]))
 }

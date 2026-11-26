@@ -8,7 +8,7 @@ FIELD_X :: 12
 FIELD_Y :: 24
 PANEL_X :: 220
 ROWS_Y :: 38 // first tool row
-ROW_H :: 16
+ROW_H :: 14
 LOG_Y :: 228
 LOG_H :: 10
 
@@ -33,8 +33,9 @@ BUTTONS := [?]Button {
 	{{PANEL_X, 177, 104, 14}, "End turn T", .End_Turn},
 	{{PANEL_X + 108, 177, 68, 14}, "Act Enter", .Confirm},
 	{{PANEL_X + 180, 177, 74, 14}, "New farm N", .New_Farm},
-	{{PANEL_X, 194, 138, 14}, "", .Expand_Barn}, // labels with prices are made in draw_buttons
-	{{PANEL_X + 142, 194, 112, 14}, "", .Buy_Cat},
+	{{PANEL_X, 194, 104, 14}, "", .Expand_Barn}, // labels with prices are made in draw_buttons
+	{{PANEL_X + 108, 194, 70, 14}, "", .Buy_Cat},
+	{{PANEL_X + 182, 194, 72, 14}, "Let go D", .Dismiss},
 }
 
 tool_row :: proc(t: Tool) -> Rect {
@@ -48,6 +49,7 @@ TOOL_GFX := [Tool]Gfx {
 	.Cabbage = .Cabbage,
 	.Corn    = .Corn,
 	.Pumpkin = .Pumpkin,
+	.Scarecrow = .Scarecrow,
 }
 
 CROP_COLOR := [Crop]u8 {
@@ -62,7 +64,7 @@ tool_color :: proc(t: Tool) -> u8 {
 	if crop, ok := tool_crop(t); ok {
 		return CROP_COLOR[crop]
 	}
-	return COLOR_WHITE
+	return t == .Scarecrow ? COLOR_ORANGE : COLOR_WHITE
 }
 
 // A click or tap at framebuffer pixel (x, y).
@@ -78,7 +80,7 @@ pointer :: proc(g: ^Game, x, y: int) {
 	}
 	for t in Tool {
 		if inside(tool_row(t), x, y) {
-			command(g, Command(u8(Command.Tool_1) + u8(t)))
+			command(g, t == .Scarecrow ? .Tool_7 : Command(u8(Command.Tool_1) + u8(t)))
 			return
 		}
 	}
@@ -129,18 +131,32 @@ draw_field :: proc(f: ^Frame, g: ^Game) {
 			draw_cell(f, g, x, y)
 		}
 	}
-	// With a farmhand in hand, show the cells they would tend.
-	if g.tool == .Farmer {
-		x0 := max(g.cursor_x - 1, 0)
-		y0 := max(g.cursor_y - 1, 0)
-		x1 := min(g.cursor_x + 1, FIELD_W - 1)
-		y1 := min(g.cursor_y + 1, FIELD_H - 1)
-		frame_rect(f, FIELD_X + x0 * CELL, FIELD_Y + y0 * CELL, (x1 - x0 + 1) * CELL, (y1 - y0 + 1) * CELL, COLOR_CYAN)
+	// Show the cells a farmhand would tend, or a scarecrow would guard, from the cursor.
+	under := cell_at(g, g.cursor_x, g.cursor_y).kind
+	if g.carrying == .Farmer || (g.carrying == .Empty && (g.tool == .Farmer || under == .Farmer)) {
+		frame_area(f, g.cursor_x, g.cursor_y, 1, COLOR_CYAN)
+	} else if g.carrying == .Scarecrow || (g.carrying == .Empty && (g.tool == .Scarecrow || under == .Scarecrow)) {
+		frame_area(f, g.cursor_x, g.cursor_y, SCARECROW_RADIUS, COLOR_ORANGE)
 	}
 	cx := FIELD_X + g.cursor_x * CELL
 	cy := FIELD_Y + g.cursor_y * CELL
-	frame_rect(f, cx, cy, CELL, CELL, COLOR_WHITE)
-	frame_rect(f, cx + 1, cy + 1, CELL - 2, CELL - 2, COLOR_WHITE)
+	color: u8 = g.carrying == .Empty ? COLOR_WHITE : COLOR_CYAN
+	frame_rect(f, cx, cy, CELL, CELL, color)
+	frame_rect(f, cx + 1, cy + 1, CELL - 2, CELL - 2, color)
+	// What is in hand rides in the cursor's corner.
+	if g.carrying != .Empty {
+		fill_rect(f, cx + 2, cy + 2, 12, 12, COLOR_BLACK)
+		draw_gfx(f, g.carrying == .Farmer ? .Farmer : .Scarecrow, cx + 2, cy + 2, g.carrying == .Farmer ? COLOR_CYAN : COLOR_ORANGE)
+	}
+}
+
+// A frame around the cells within r of (x, y), clipped to the field.
+frame_area :: proc(f: ^Frame, x, y, r: int, color: u8) {
+	x0 := max(x - r, 0)
+	y0 := max(y - r, 0)
+	x1 := min(x + r, FIELD_W - 1)
+	y1 := min(y + r, FIELD_H - 1)
+	frame_rect(f, FIELD_X + x0 * CELL, FIELD_Y + y0 * CELL, (x1 - x0 + 1) * CELL, (y1 - y0 + 1) * CELL, color)
 }
 
 draw_cell :: proc(f: ^Frame, g: ^Game, x, y: int) {
@@ -160,8 +176,11 @@ draw_cell :: proc(f: ^Frame, g: ^Game, x, y: int) {
 	switch c.kind {
 	case .Empty:
 		draw_gfx_scaled(f, .Soil, px, py, 2, COLOR_SOIL)
+	case .Scarecrow:
+		draw_gfx_scaled(f, .Scarecrow, px, py, 2, COLOR_ORANGE)
 	case .Farmer:
-		draw_gfx_scaled(f, .Farmer, px, py, 2, c.hunger == 0 ? COLOR_WHITE : COLOR_ORANGE)
+		// white when working, cyan while settling in after a move, orange when hungry
+		draw_gfx_scaled(f, .Farmer, px, py, 2, c.hunger > 0 ? COLOR_ORANGE : c.moved ? COLOR_CYAN : COLOR_WHITE)
 		if c.hunger > 0 {
 			// one red pip per hungry turn
 			for i in 0 ..< int(c.hunger) {
@@ -195,6 +214,20 @@ draw_tools :: proc(f: ^Frame, g: ^Game) {
 		add_int(&key, int(t) + 1)
 		print(f, text_of(&key), PANEL_X + 2, y + 2, COLOR_MID)
 		draw_gfx(f, TOOL_GFX[t], PANEL_X + 10, y, tool_color(t))
+		if t == .Scarecrow {
+			print(f, "Scarecrow", PANEL_X + 26, y + 2, COLOR_WHITE)
+			cost: Text
+			add(&cost, "$")
+			add_int(&cost, SCARECROW_COST)
+			print(f, text_of(&cost), PANEL_X + 84, y + 2, COLOR_YELLOW)
+			area: Text
+			add(&area, "guards ")
+			add_int(&area, SCARECROW_RADIUS * 2 + 1)
+			add(&area, "x")
+			add_int(&area, SCARECROW_RADIUS * 2 + 1)
+			print(f, text_of(&area), PANEL_X + 110, y + 2, COLOR_LIGHT)
+			continue
+		}
 		crop, ok := tool_crop(t)
 		if !ok {
 			print(f, "Farmhand", PANEL_X + 26, y + 2, COLOR_WHITE)
@@ -240,6 +273,9 @@ draw_tools :: proc(f: ^Frame, g: ^Game) {
 	k: Text
 	add(&k, "Cats ")
 	add_int(&k, g.cats)
+	add(&k, ", ")
+	add_int(&k, CAT_WANDER_PERCENT)
+	add(&k, "% roam")
 	print(f, text_of(&k), PANEL_X + 146, 148, COLOR_LIGHT)
 }
 
@@ -271,55 +307,78 @@ draw_buttons :: proc(f: ^Frame, g: ^Game) {
 	}
 }
 
-// What is under the cursor.
+// What is under the cursor, or what is in hand.
 draw_status :: proc(f: ^Frame, g: ^Game) {
 	c := cell_at(g, g.cursor_x, g.cursor_y)^
 	t: Text
-	if !c.owned {
+	color: u8 = COLOR_WHITE
+	if g.carrying != .Empty {
+		add(&t, g.carrying == .Farmer ? "In hand: farmhand. " : "In hand: scarecrow. ")
+		add(&t, c.owned && c.kind == .Empty ? "Enter: set down" : "Find empty soil")
+		color = COLOR_CYAN
+	} else if !c.owned {
 		if can_buy(g, g.cursor_x, g.cursor_y) {
 			add(&t, "Wild land. Enter: buy it for $")
 			add_int(&t, land_price(g))
 		} else {
 			add(&t, "Wild land. Buy the land next to it first.")
 		}
-		print(f, text_of(&t), PANEL_X, 213, COLOR_GREEN)
-		t = {}
+		color = COLOR_GREEN
 	} else {
-	switch c.kind {
-	case .Empty:
-		add(&t, "Soil. Enter: ")
-		if crop, ok := tool_crop(g.tool); ok {
-			add(&t, "plant ")
-			add(&t, CROPS[crop].name)
-			if g.seeds[crop] > 0 {
-				add(&t, " (seed)")
+		switch c.kind {
+		case .Empty:
+			add(&t, "Soil. Enter: ")
+			if crop, ok := tool_crop(g.tool); ok {
+				add(&t, "plant ")
+				add(&t, CROPS[crop].name)
+				if g.seeds[crop] > 0 {
+					add(&t, " (seed)")
+				} else {
+					add(&t, " ($")
+					add_int(&t, CROPS[crop].cost)
+					add(&t, ")")
+				}
+			} else if g.tool == .Scarecrow {
+				add(&t, "put up a scarecrow ($")
+				add_int(&t, SCARECROW_COST)
+				add(&t, ")")
 			} else {
-				add(&t, " ($")
-				add_int(&t, CROPS[crop].cost)
+				add(&t, "hire a farmhand ($")
+				add_int(&t, FARMER_COST)
 				add(&t, ")")
 			}
-		} else {
-			add(&t, "hire a farmhand ($")
-			add_int(&t, FARMER_COST)
-			add(&t, ")")
+		case .Crop:
+			add(&t, CROPS[c.crop].name)
+			if ripe(c) {
+				add(&t, ", ripe. Enter: harvest")
+			} else {
+				add(&t, ": ")
+				add_int(&t, int(c.progress))
+				add(&t, "/")
+				add_int(&t, CROPS[c.crop].grow)
+				add(&t, ", +")
+				add_int(&t, growth_at(g, g.cursor_x, g.cursor_y))
+				add(&t, " a turn")
+			}
+			if guarded(g, g.cursor_x, g.cursor_y) {
+				add(&t, ", guarded")
+			} else {
+				add(&t, ", crows ")
+				add_int(&t, CROW_PERCENT)
+				add(&t, "%")
+			}
+		case .Farmer:
+			if c.hunger > 0 {
+				add(&t, "Farmhand, hungry. Enter: move, D: let go")
+			} else if c.moved {
+				add(&t, "Farmhand, settling in. Enter: move")
+			} else {
+				add(&t, "Farmhand, working. Enter: move, D: let go")
+			}
+		case .Scarecrow:
+			add(&t, "Scarecrow. Enter: move, D: take down")
 		}
-	case .Crop:
-		add(&t, CROPS[c.crop].name)
-		if ripe(c) {
-			add(&t, ", ripe. Enter: harvest")
-		} else {
-			add(&t, ": ")
-			add_int(&t, int(c.progress))
-			add(&t, "/")
-			add_int(&t, CROPS[c.crop].grow)
-			add(&t, ", +")
-			add_int(&t, growth_at(g, g.cursor_x, g.cursor_y))
-			add(&t, " a turn")
-		}
-	case .Farmer:
-		add(&t, c.hunger == 0 ? "Farmhand, fed and working" : "Farmhand, hungry")
 	}
-	print(f, text_of(&t), PANEL_X, 213, COLOR_WHITE)
-	}
+	print(f, text_of(&t), PANEL_X, 213, color)
 	fill_rect(f, 0, LOG_Y - 4, SCREEN_W, 1, COLOR_DARK)
 }
