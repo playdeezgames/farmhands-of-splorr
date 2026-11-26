@@ -76,6 +76,7 @@ dump_farm :: proc(g: ^Game) {
 	hire(g, 3, 2)
 	hire(g, 4, 4)
 	place_scarecrow(g, 2, 3)
+	cell_at(g, 2, 3).health = SCARECROW_HEALTH - 3 // weathered a little
 	crops := [?]Crop{.Carrot, .Wheat, .Cabbage, .Corn, .Pumpkin}
 	i := 0
 	for y in 0 ..< FIELD_H {

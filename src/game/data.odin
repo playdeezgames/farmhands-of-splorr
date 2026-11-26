@@ -45,6 +45,8 @@ CAT_WANDER_PERCENT :: 10 // chance each turn that a cat wanders off
 CROW_PERCENT :: 3 // chance each turn that crows eat an unguarded crop
 SCARECROW_COST :: 20
 SCARECROW_RADIUS :: 2 // guards the square this many cells around it
+SCARECROW_HEALTH :: 12 // a new scarecrow's health
+SCARECROW_WEAR_MAX :: 2 // the weather takes 0 to this much health a turn
 
 Terrain :: enum u8 {
 	Wild,

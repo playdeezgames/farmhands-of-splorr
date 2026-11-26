@@ -21,6 +21,7 @@ Cell :: struct {
 	hunger:   u8, // farmer: hungry turns in a row
 	fed:      bool, // farmer: ate this turn, so tends the neighbours
 	moved:    bool, // farmer: set down this turn, so settles in and works from the next
+	health:   u8, // scarecrow: the weather wears it down; at 0 it falls apart
 }
 
 // What the player has in hand: a farmer to hire or a crop to plant.
@@ -97,6 +98,7 @@ Event :: enum u8 {
 	Placed,
 	Carried,
 	Dismissed,
+	Fell,
 }
 
 Game :: struct {
@@ -223,7 +225,7 @@ pick_up :: proc(g: ^Game, x, y: int) -> bool {
 	g.carry_x, g.carry_y = x, y
 	g.carry_cell = c^
 	c^ = {owned = true}
-	say(g, g.carrying == .Farmer ? "Picked up a farmhand. Enter on empty soil to set them down." : "Picked up the scarecrow. Enter on empty soil to set it down.", COLOR_CYAN)
+	say(g, g.carrying == .Farmer ? "Picked up a farmhand. Press Space on empty soil to set them down." : "Picked up the scarecrow. Press Space on empty soil to set it down.", COLOR_CYAN)
 	g.events += {.Carried}
 	return true
 }
@@ -306,7 +308,7 @@ place_scarecrow :: proc(g: ^Game, x, y: int) -> bool {
 		return false
 	}
 	g.money -= SCARECROW_COST
-	c^ = {owned = true, kind = .Scarecrow}
+	c^ = {owned = true, kind = .Scarecrow, health = SCARECROW_HEALTH}
 	add(&t, "Put up a scarecrow for $")
 	add_int(&t, SCARECROW_COST)
 	add(&t, ". It guards the ")
@@ -742,6 +744,20 @@ end_turn :: proc(g: ^Game) {
 			}
 		}
 	}
+	// Then the weather, after the crows, so a scarecrow still guards on the turn it falls.
+	fell := 0
+	for &c in g.field {
+		if c.kind != .Scarecrow {
+			continue
+		}
+		wear := rng_int(&g.rng, SCARECROW_WEAR_MAX + 1)
+		if int(c.health) <= wear {
+			c = {owned = true}
+			fell += 1
+		} else {
+			c.health -= u8(wear)
+		}
+	}
 	ripened := 0
 	for y in 0 ..< FIELD_H {
 		for x in 0 ..< FIELD_W {
@@ -795,6 +811,17 @@ end_turn :: proc(g: ^Game) {
 		}
 		say(g, text_of(&t5), COLOR_RED)
 		g.events += {.Crows}
+	}
+	if fell > 0 {
+		t7: Text
+		if fell == 1 {
+			add(&t7, "A scarecrow fell apart in the weather.")
+		} else {
+			add_int(&t7, fell)
+			add(&t7, " scarecrows fell apart in the weather.")
+		}
+		say(g, text_of(&t7), COLOR_ORANGE)
+		g.events += {.Fell}
 	}
 	if wandered > 0 {
 		t6: Text

@@ -7,7 +7,7 @@ import "core:mem"
 // whose values are out of range.
 
 SAVE_MAGIC :: u32(0x46484E31) // "FHN1"
-SAVE_VERSION :: u32(4) // 2: land to buy; 3: barn capacity, rats and cats (November 25, 2026); 4: crows, scarecrows, carrying (November 26, 2026)
+SAVE_VERSION :: u32(5) // 2: land to buy; 3: barn capacity, rats and cats (November 25, 2026); 4: crows, scarecrows, carrying; 5: scarecrow health (November 26, 2026)
 SAVE_HEADER :: 8
 SAVE_SIZE :: SAVE_HEADER + size_of(Game)
 
@@ -53,12 +53,18 @@ save_valid :: proc(g: ^Game) -> bool {
 		if !home.owned || home.kind != .Empty || g.carry_cell.kind != g.carrying {
 			return false
 		}
+		if g.carrying == .Scarecrow && (g.carry_cell.health < 1 || int(g.carry_cell.health) > SCARECROW_HEALTH) {
+			return false
+		}
 	}
 	for c in g.field {
 		if u8(c.kind) > u8(max(Cell_Kind)) || u8(c.crop) > u8(max(Crop)) {
 			return false
 		}
 		if c.kind != .Empty && !c.owned {
+			return false
+		}
+		if c.kind == .Scarecrow && (c.health < 1 || int(c.health) > SCARECROW_HEALTH) {
 			return false
 		}
 		if c.kind == .Crop && int(c.progress) > CROPS[c.crop].grow {

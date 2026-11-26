@@ -31,7 +31,7 @@ BUTTONS := [?]Button {
 	{{PANEL_X + 66, 160, 86, 14}, "Sell all A", .Sell_All},
 	{{PANEL_X + 156, 160, 98, 14}, "Keep seed Z", .Seeds},
 	{{PANEL_X, 177, 104, 14}, "End turn T", .End_Turn},
-	{{PANEL_X + 108, 177, 68, 14}, "Act Enter", .Confirm},
+	{{PANEL_X + 108, 177, 68, 14}, "Act Space", .Confirm},
 	{{PANEL_X + 180, 177, 74, 14}, "New farm N", .New_Farm},
 	{{PANEL_X, 194, 104, 14}, "", .Expand_Barn}, // labels with prices are made in draw_buttons
 	{{PANEL_X + 108, 194, 70, 14}, "", .Buy_Cat},
@@ -178,6 +178,10 @@ draw_cell :: proc(f: ^Frame, g: ^Game, x, y: int) {
 		draw_gfx_scaled(f, .Soil, px, py, 2, COLOR_SOIL)
 	case .Scarecrow:
 		draw_gfx_scaled(f, .Scarecrow, px, py, 2, COLOR_ORANGE)
+		// health bar along the bottom; red when nearly gone
+		w := (CELL - 4) * int(c.health) / SCARECROW_HEALTH
+		fill_rect(f, px + 2, py + CELL - 3, CELL - 4, 1, COLOR_SOIL)
+		fill_rect(f, px + 2, py + CELL - 3, w, 1, c.health <= 3 ? COLOR_RED : COLOR_ORANGE)
 	case .Farmer:
 		// white when working, cyan while settling in after a move, orange when hungry
 		draw_gfx_scaled(f, .Farmer, px, py, 2, c.hunger > 0 ? COLOR_ORANGE : c.moved ? COLOR_CYAN : COLOR_WHITE)
@@ -314,11 +318,11 @@ draw_status :: proc(f: ^Frame, g: ^Game) {
 	color: u8 = COLOR_WHITE
 	if g.carrying != .Empty {
 		add(&t, g.carrying == .Farmer ? "In hand: farmhand. " : "In hand: scarecrow. ")
-		add(&t, c.owned && c.kind == .Empty ? "Enter: set down" : "Find empty soil")
+		add(&t, c.owned && c.kind == .Empty ? "Space: set down" : "Find empty soil")
 		color = COLOR_CYAN
 	} else if !c.owned {
 		if can_buy(g, g.cursor_x, g.cursor_y) {
-			add(&t, "Wild land. Enter: buy it for $")
+			add(&t, "Wild land. Space: buy it for $")
 			add_int(&t, land_price(g))
 		} else {
 			add(&t, "Wild land. Buy the land next to it first.")
@@ -327,7 +331,7 @@ draw_status :: proc(f: ^Frame, g: ^Game) {
 	} else {
 		switch c.kind {
 		case .Empty:
-			add(&t, "Soil. Enter: ")
+			add(&t, "Soil. Space: ")
 			if crop, ok := tool_crop(g.tool); ok {
 				add(&t, "plant ")
 				add(&t, CROPS[crop].name)
@@ -350,7 +354,7 @@ draw_status :: proc(f: ^Frame, g: ^Game) {
 		case .Crop:
 			add(&t, CROPS[c.crop].name)
 			if ripe(c) {
-				add(&t, ", ripe. Enter: harvest")
+				add(&t, ", ripe. Space: harvest")
 			} else {
 				add(&t, ": ")
 				add_int(&t, int(c.progress))
@@ -369,14 +373,18 @@ draw_status :: proc(f: ^Frame, g: ^Game) {
 			}
 		case .Farmer:
 			if c.hunger > 0 {
-				add(&t, "Farmhand, hungry. Enter: move, D: let go")
+				add(&t, "Farmhand, hungry. Space: move, D: let go")
 			} else if c.moved {
-				add(&t, "Farmhand, settling in. Enter: move")
+				add(&t, "Farmhand, settling in. Space: move")
 			} else {
-				add(&t, "Farmhand, working. Enter: move, D: let go")
+				add(&t, "Farmhand, working. Space: move, D: let go")
 			}
 		case .Scarecrow:
-			add(&t, "Scarecrow. Enter: move, D: take down")
+			add(&t, "Scarecrow ")
+		add_int(&t, int(c.health))
+		add(&t, "/")
+		add_int(&t, SCARECROW_HEALTH)
+		add(&t, ". Space: move, D: take down")
 		}
 	}
 	print(f, text_of(&t), PANEL_X, 213, color)

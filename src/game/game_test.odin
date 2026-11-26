@@ -543,6 +543,8 @@ a_scarecrow_guards_five_by_five :: proc(t: ^testing.T) {
 				c := cell_at(&g, x, y)
 				if c.kind != .Scarecrow {
 					c^ = {owned = true, kind = .Crop, crop = .Corn}
+				} else {
+					c.health = SCARECROW_HEALTH // keep it standing
 				}
 			}
 		}
@@ -709,4 +711,98 @@ saving_while_carrying :: proc(t: ^testing.T) {
 	g.field[2 * FIELD_W + 2] = {owned = true, kind = .Scarecrow}
 	write_save(&g, buf[:])
 	testing.expect(t, !read_save(&back, buf[:]))
+}
+
+// --- Scarecrows weather and fall apart (November 26, 2026).
+
+@(test)
+scarecrows_last_about_their_health_in_turns :: proc(t: ^testing.T) {
+	g: Game
+	init_game(&g, 2468)
+	own_all(&g)
+	total, shortest, longest := 0, 1000, 0
+	RUNS :: 300
+	for _ in 0 ..< RUNS {
+		g.field[0] = {owned = true, kind = .Scarecrow, health = SCARECROW_HEALTH}
+		turns := 0
+		for g.field[0].kind == .Scarecrow {
+			end_turn(&g)
+			turns += 1
+		}
+		total += turns
+		shortest = min(shortest, turns)
+		longest = max(longest, turns)
+	}
+	expected := SCARECROW_HEALTH * 2 / SCARECROW_WEAR_MAX // wear averages SCARECROW_WEAR_MAX / 2 a turn
+	average := total / RUNS
+	testing.expectf(t, abs(average - expected) <= 2, "average %d turns, expected about %d", average, expected)
+	testing.expect(t, shortest < longest)
+}
+
+@(test)
+a_scarecrow_falls_apart :: proc(t: ^testing.T) {
+	g: Game
+	init_game(&g, 1)
+	own_all(&g)
+	g.money = 100
+	testing.expect(t, place_scarecrow(&g, 3, 3))
+	testing.expect_value(t, int(cell_at(&g, 3, 3).health), SCARECROW_HEALTH)
+	// carrying keeps its health
+	cell_at(&g, 3, 3).health = 5
+	g.cursor_x, g.cursor_y = 3, 3
+	act(&g)
+	g.cursor_x, g.cursor_y = 4, 4
+	act(&g)
+	testing.expect_value(t, int(cell_at(&g, 4, 4).health), 5)
+	cell_at(&g, 4, 4).health = 1
+	for _ in 0 ..< 100 {
+		g.events = {}
+		end_turn(&g)
+		if cell_at(&g, 4, 4).kind != .Scarecrow {
+			break
+		}
+	}
+	testing.expect_value(t, cell_at(&g, 4, 4)^, Cell{owned = true})
+	testing.expect(t, .Fell in g.events)
+	testing.expect_value(t, sound_for(g.events - {.Turned}), Sfx.Fall)
+}
+
+@(test)
+a_scarecrow_guards_on_the_turn_it_falls :: proc(t: ^testing.T) {
+	// The crows roll before the weather: crops inside the 5x5 are safe on the scarecrow's last turn.
+	for seed in 1 ..= 200 {
+		g: Game
+		init_game(&g, u64(seed))
+		own_all(&g)
+		for &c in g.field {
+			c = {owned = true, kind = .Crop, crop = .Pumpkin}
+		}
+		cell_at(&g, 3, 3)^ = {owned = true, kind = .Scarecrow, health = 1}
+		end_turn(&g)
+		for y in 1 ..= 5 {
+			for x in 1 ..= 5 {
+				if x == 3 && y == 3 {
+					continue
+				}
+				testing.expectf(t, cell_at(&g, x, y).kind == .Crop, "seed %d: crop at %d,%d eaten", seed, x, y)
+			}
+		}
+	}
+}
+
+@(test)
+a_save_with_a_broken_scarecrow_is_refused :: proc(t: ^testing.T) {
+	g: Game
+	init_game(&g)
+	g.field[27] = {owned = true, kind = .Scarecrow, health = 0}
+	buf: [SAVE_SIZE]u8
+	write_save(&g, buf[:])
+	back: Game
+	testing.expect(t, !read_save(&back, buf[:]))
+	g.field[27].health = SCARECROW_HEALTH + 1
+	write_save(&g, buf[:])
+	testing.expect(t, !read_save(&back, buf[:]))
+	g.field[27].health = SCARECROW_HEALTH
+	write_save(&g, buf[:])
+	testing.expect(t, read_save(&back, buf[:]))
 }
