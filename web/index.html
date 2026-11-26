@@ -26,8 +26,8 @@
 <footer>
 	Keys: arrows move, Enter acts, 1-6 or Q/E pick, X sell 1, A sell all, Z keep seed, B bigger barn, C cat, T end turn, N new farm. Mouse and touch: tap anything.<br>
 	Farmhands of SPLORR!! (demo) by TheGrumpyGameDev. Code made by an AI agent (Claude Code) at the author's direction.
-	Tiles: Urizen by vurmux (CC0). Font: DINOBYTE by mby (CC BY 4.0). Sound and data made in the Anvil. Feedback by LootLocker.
-	<a href="#" id="feedback-link">Send feedback (F)</a> · <a href="#" id="sound-link">Sound: on (M)</a> · <a href="https://thegrumpygamedev.itch.io/">itch.io</a> · <a href="https://playdeezgames.github.io/oeuvre-of-splorr/">more games</a>
+	Tiles: Urizen by vurmux (CC0). Font: DINOBYTE by mby (CC BY 4.0). Sound and data made in the Anvil.<span class="ll-only" hidden> Feedback by LootLocker.</span>
+	<span class="ll-only" hidden><a href="#" id="feedback-link">Send feedback (F)</a> · </span><a href="#" id="sound-link">Sound: on (M)</a> · <a href="https://thegrumpygamedev.itch.io/">itch.io</a> · <a href="https://playdeezgames.github.io/oeuvre-of-splorr/">more games</a>
 </footer>
 <script src="odin.js"></script>
 <script src="lootlocker.js"></script>
@@ -37,10 +37,14 @@
 	const ctx = canvas.getContext("2d");
 
 	// Feedback through the shared SPLORR!! LootLocker kit. The LootLocker game for this Metaphor is not set up
-	// yet (the user's console setup); until domain and key are filled in, the form opens but cannot send.
-	const ll = LootLocker({ domain: "", key: "", version: "0.0.1", idKey: "fhos-ll-player" });
-	const feedback = ll.feedbackDialog({ game: "Farmhands of SPLORR!!" });
-	document.getElementById("feedback-link").addEventListener("click", (e) => { e.preventDefault(); feedback.open(); });
+	// yet (the user's console setup); until LL_DOMAIN and LL_KEY are filled in, the link, the credit and F stay hidden.
+	const LL_DOMAIN = "", LL_KEY = "";
+	const feedback = LL_KEY ? LootLocker({ domain: LL_DOMAIN, key: LL_KEY, version: "0.0.1", idKey: "fhos-ll-player" })
+		.feedbackDialog({ game: "Farmhands of SPLORR!!" }) : null;
+	if (feedback) {
+		document.querySelectorAll(".ll-only").forEach((el) => { el.hidden = false; });
+		document.getElementById("feedback-link").addEventListener("click", (e) => { e.preventDefault(); feedback.open(); });
+	}
 
 	const memory = new odin.WasmMemoryInterface();
 	await odin.runWasm("game.wasm", null, {}, memory);
@@ -133,7 +137,7 @@
 	};
 	window.addEventListener("keydown", (e) => {
 		if (e.ctrlKey || e.metaKey || e.altKey) return;
-		if (e.code === "KeyF" && !e.repeat) { e.preventDefault(); feedback.open(); return; }
+		if (e.code === "KeyF" && feedback && !e.repeat) { e.preventDefault(); feedback.open(); return; }
 		if (e.code === "KeyM" && !e.repeat) { e.preventDefault(); toggleSound(); return; }
 		if (e.code === "Tab") { e.preventDefault(); sendCommand(e.shiftKey ? C.PREV : C.NEXT); return; }
 		if (!(e.code in KEYS)) return;

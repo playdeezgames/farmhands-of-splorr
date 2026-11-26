@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Prepares the itch.io html build: tests, a size-optimised web build, a zip. Pushes ONLY with --push.
 # Never commits, never deletes anything but its own zip. Usage: tools/ship.sh [--push]
-# There is no itch.io page; the target below is a guess at the slug, to confirm with the user
-# before any push (one ship a day, booked through Coxswain).
+# First release booked in Coxswain for December 6, 2026 (#43). The page https://thegrumpygamedev.itch.io/farmhands-of-splorr
+# does not exist yet: the slug below is a guess until it does. Push only on the user's "ship", after ship_today.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 TARGET="thegrumpygamedev/farmhands-of-splorr:html"

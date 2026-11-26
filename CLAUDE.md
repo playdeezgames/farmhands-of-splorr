@@ -17,7 +17,8 @@ tools/serve.sh                 # build and serve on http://localhost:${PORT:-800
 tools/pages.sh                 # tests, size build, copy into docs/ for GitHub Pages; never commits or pushes
 ./shippit.sh [--push]          # tests, size build, zip; butler push only with --push (only on the user's "ship")
 python3 -I tools/gen_assets.py [--sheet out.png]  # regenerate src/game/data.odin, gfx.odin, font.odin
-odin test src/game -collection:tggd=src -define:DUMP_PLAY=/tmp/frame.ppm   # render a frame of a farm
+tools/make_shots.sh            # assets/screenshots/ from the frame dump's scenes 1 to 3
+odin test src/game -collection:tggd=src -define:DUMP_PLAY=/tmp/frame.ppm   # render a frame of a farm (scene 2)
 python3 -I tools/make_cover.py /tmp/frame.ppm      # assets/cover.png from that frame
 ```
 
@@ -36,6 +37,7 @@ Odin compiled to `js_wasm32`, a 480 by 270 software framebuffer of palette indic
 
 - **"Push" means `git push`; "ship" means itch.io.** Neither without the user saying that word. One ship a day through Coxswain.
 - **GitHub Pages:** live since November 25, 2026 at https://playdeezgames.github.io/farmhands-of-splorr/ (public repo `playdeezgames/farmhands-of-splorr`, served from `main` `/docs`). To update: `tools/pages.sh`, commit `docs/`, push (each push needs the user's go-ahead). Public repo: no 1-Bit Kingdom art, ever.
-- Release standard: `ITCH_DESCRIPTION.md`, `assets/cover.png`, `assets/screenshots/`, `devlog/YYYYMMDD/`, `tools/ship.sh` + `shippit.sh`. Footer back links, AI disclosure and "Send feedback" (LootLocker game not set up yet).
+- Release standard: `ITCH_DESCRIPTION.md`, `assets/cover.png`, `assets/screenshots/`, `devlog/YYYYMMDD/`, `tools/ship.sh` + `shippit.sh`. Footer back links and AI disclosure; the "Send feedback" link and F stay hidden until a LootLocker game exists (`LL_DOMAIN`/`LL_KEY` in `web/index.html`; the user's call).
+- **itch.io:** first release booked in Coxswain for December 6, 2026 (#43). Page copy and devlog are drafts in `ITCH_DESCRIPTION.md` and `devlog/20261206/`; the itch page does not exist yet.
 - In player-facing text the game is a **"Metaphor"** and the voice says **"yer"**.
 - Do not describe or "fix" deliberate design as a problem once the user has decided it.
