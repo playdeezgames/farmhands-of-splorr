@@ -6,10 +6,12 @@ import "core:testing"
 
 // Writes a frame of the game as a PPM, for screenshots and the cover:
 // odin test src/game -collection:tggd=src -define:DUMP_PLAY=/path/frame.ppm [-define:DUMP_SCENE=n]
-// Scenes: 2 (the default, also the cover) a farm in progress; 1 a new farm a couple of turns in;
+// Scenes: 2 (the default, also the cover) a farm in progress; 1 a new farm in the tutorial;
 // 3 the farm in progress on a bad turn: rats in the barn, crows in the field, a cat gone.
 DUMP_PLAY :: #config(DUMP_PLAY, "")
 DUMP_SCENE :: #config(DUMP_SCENE, 2)
+DUMP_PANEL :: #config(DUMP_PANEL, 0) // the tab showing: 0 Farm, 1 Barn, 2 Stats, 3 Help
+DUMP_PAGE :: #config(DUMP_PAGE, 0)
 
 @(private = "file")
 write_file :: os.write_entire_file
@@ -21,14 +23,13 @@ dump_play :: proc(t: ^testing.T) {
 		defer free(g)
 		init_game(g)
 		when DUMP_SCENE == 1 {
-			plant(g, 3, 3, .Carrot)
-			plant(g, 4, 3, .Wheat)
-			plant(g, 4, 4, .Carrot)
-			hire(g, 3, 4)
-			end_turn(g)
-			end_turn(g)
-			g.cursor_x, g.cursor_y = 5, 3
-			g.tool = .Carrot
+			init_tutorial(g)
+			command(g, .Confirm) // a carrot at the cursor: goal 1
+			g.cursor_x = 4
+			command(g, .Confirm)
+			command(g, .End_Turn) // goal 2
+			command(g, .End_Turn)
+			g.cursor_x, g.cursor_y = 4, 4
 		} else {
 			dump_farm(g)
 		}
@@ -44,6 +45,8 @@ dump_play :: proc(t: ^testing.T) {
 			say(g, "Crows ate a Corn!", COLOR_RED)
 			say(g, "1 cat wandered off.", COLOR_ORANGE)
 		}
+		g.panel = Panel(DUMP_PANEL)
+		g.page = DUMP_PAGE
 		f := new(Frame)
 		defer free(f)
 		draw_game(f, g)
@@ -62,6 +65,13 @@ dump_play :: proc(t: ^testing.T) {
 // a bigger barn, two cats.
 dump_farm :: proc(g: ^Game) {
 	g.money = 240
+	for crop in ([?]Crop{.Radish, .Peas, .Wheat, .Onion, .Cabbage, .Potato}) {
+		g.licensed[crop] = true
+	}
+	g.seed_target[.Carrot] = 4
+	g.seed_target[.Wheat] = 3
+	g.sell_above[.Carrot] = 12
+	g.sell_above[.Radish] = 0
 	for y in 1 ..< 6 {
 		for x in 2 ..< 6 {
 			cell_at(g, x, y).owned = true
@@ -77,7 +87,7 @@ dump_farm :: proc(g: ^Game) {
 	hire(g, 4, 4)
 	place_scarecrow(g, 2, 3)
 	cell_at(g, 2, 3).health = SCARECROW_HEALTH - 3 // weathered a little
-	crops := [?]Crop{.Carrot, .Wheat, .Cabbage, .Corn, .Pumpkin}
+	crops := [?]Crop{.Carrot, .Peas, .Wheat, .Onion, .Cabbage, .Potato, .Radish}
 	i := 0
 	for y in 0 ..< FIELD_H {
 		for x in 0 ..< FIELD_W {
@@ -110,6 +120,12 @@ dump_farm :: proc(g: ^Game) {
 			}
 		}
 	}
+	// ripe crops just ripe, so the picture shows them in colour rather than about to rot
+	for &c in g.field {
+		if ripe(c) {
+			c.rot = 0
+		}
+	}
 	g.cursor_x, g.cursor_y = 6, 2
-	g.tool = .Corn
+	g.tool = .Wheat
 }

@@ -3,9 +3,14 @@ package game
 
 Crop :: enum u8 {
 	Carrot,
+	Radish,
+	Peas,
 	Wheat,
+	Onion,
 	Cabbage,
+	Potato,
 	Corn,
+	Tomato,
 	Pumpkin,
 }
 
@@ -19,14 +24,20 @@ Crop_Info :: struct {
 	uses:  [3]int, // N, P, K the soil pays when it is harvested or rots
 	gives: [3]int, // N, P, K it puts back then
 	keep:  int, // turns it lasts ripe in the field before it rots
+	license: int, // money to be allowed to plant it; 0 is allowed from the start
 }
 
 CROPS := [Crop]Crop_Info {
-	.Carrot = {"Carrot", 1, 3, 3, 2, 1, {0, 1, 0}, {0, 0, 1}, 3},
-	.Wheat = {"Wheat", 2, 4, 5, 3, 1, {1, 0, 0}, {0, 1, 0}, 4},
-	.Cabbage = {"Cabbage", 3, 5, 8, 2, 2, {2, 0, 0}, {0, 1, 0}, 2},
-	.Corn = {"Corn", 5, 7, 13, 3, 2, {2, 0, 0}, {0, 0, 1}, 3},
-	.Pumpkin = {"Pumpkin", 8, 9, 22, 2, 4, {0, 0, 2}, {1, 0, 0}, 5},
+	.Carrot = {"Carrot", 1, 3, 3, 2, 1, {0, 1, 0}, {0, 0, 1}, 3, 0},
+	.Radish = {"Radish", 1, 2, 2, 2, 1, {0, 0, 1}, {0, 1, 0}, 2, 10},
+	.Peas = {"Peas", 2, 4, 4, 3, 1, {0, 1, 0}, {2, 0, 0}, 3, 15},
+	.Wheat = {"Wheat", 2, 4, 5, 3, 1, {1, 0, 0}, {0, 1, 0}, 4, 20},
+	.Onion = {"Onion", 3, 5, 7, 2, 1, {0, 0, 1}, {1, 0, 0}, 6, 30},
+	.Cabbage = {"Cabbage", 3, 5, 8, 2, 2, {2, 0, 0}, {0, 1, 0}, 2, 40},
+	.Potato = {"Potato", 4, 6, 10, 3, 3, {0, 0, 2}, {0, 1, 0}, 6, 50},
+	.Corn = {"Corn", 5, 7, 13, 3, 2, {2, 0, 0}, {0, 0, 1}, 3, 75},
+	.Tomato = {"Tomato", 6, 8, 17, 3, 2, {1, 1, 0}, {0, 0, 1}, 2, 100},
+	.Pumpkin = {"Pumpkin", 8, 9, 22, 2, 4, {0, 0, 2}, {1, 0, 0}, 5, 150},
 }
 
 FARMER_COST :: 25

@@ -57,6 +57,11 @@ Gfx :: enum {
 	Cat,
 	Rat,
 	Manure,
+	Radish,
+	Peas,
+	Onion,
+	Potato,
+	Tomato,
 }
 
 cls :: proc(f: ^Frame, c: u8) {
@@ -132,6 +137,42 @@ print :: proc(f: ^Frame, text: string, x, y: int, color: u8 = COLOR_WHITE) -> in
 		}
 	}
 	return text_width(text)
+}
+
+// Like print, but a ^ before N, P or K draws that letter in its soil-bar colour (NUTRIENT_COLOR);
+// the ^ itself takes no room. Returns the width drawn.
+print_rich :: proc(f: ^Frame, text: string, x, y: int, color: u8 = COLOR_WHITE) -> int {
+	cx := x
+	for i := 0; i < len(text); i += 1 {
+		ch := text[i : i + 1]
+		c := color
+		if text[i] == '^' && i + 1 < len(text) {
+			switch text[i + 1] {
+			case 'N':
+				c = NUTRIENT_COLOR[.N]
+			case 'P':
+				c = NUTRIENT_COLOR[.P]
+			case 'K':
+				c = NUTRIENT_COLOR[.K]
+			}
+			i += 1
+			ch = text[i : i + 1]
+		}
+		cx += print(f, ch, cx, y, c)
+	}
+	return cx - x
+}
+
+// The width print_rich draws.
+rich_width :: proc(text: string) -> int {
+	n := 0
+	for i := 0; i < len(text); i += 1 {
+		if text[i] == '^' && i + 1 < len(text) {
+			i += 1
+		}
+		n += 1
+	}
+	return n * GLYPH_W
 }
 
 // Writes palette indices through the palette into rgba.

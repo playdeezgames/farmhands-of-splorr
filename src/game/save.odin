@@ -7,7 +7,7 @@ import "core:mem"
 // whose values are out of range.
 
 SAVE_MAGIC :: u32(0x46484E31) // "FHN1"
-SAVE_VERSION :: u32(6) // 2: land to buy; 3: barn capacity, rats and cats (November 25, 2026); 4: crows, scarecrows, carrying; 5: scarecrow health; 6: soil, half-step growth, rot (November 26, 2026)
+SAVE_VERSION :: u32(7) // 7: ten crops, licenses, seed and sell rules, stats, tabs, tutorial (November 27, 2026); 2: land to buy; 3: barn capacity, rats and cats (November 25, 2026); 4: crows, scarecrows, carrying; 5: scarecrow health; 6: soil, half-step growth, rot (November 26, 2026)
 SAVE_HEADER :: 8
 SAVE_SIZE :: SAVE_HEADER + size_of(Game)
 
@@ -85,6 +85,18 @@ save_valid :: proc(g: ^Game) -> bool {
 		if g.barn[crop] < 0 || g.seeds[crop] < 0 {
 			return false
 		}
+		if g.seed_target[crop] < 0 || g.seed_target[crop] > SEED_TARGET_MAX {
+			return false
+		}
+		if g.sell_above[crop] < SELL_ABOVE_OFF || g.sell_above[crop] > SELL_ABOVE_MAX {
+			return false
+		}
+	}
+	if u8(g.panel) > u8(max(Panel)) || g.page < 0 || g.page >= page_count(g.panel) {
+		return false
+	}
+	if g.tutorial < 0 || g.tutorial > len(TUTORIAL) {
+		return false
 	}
 	for l in g.log {
 		if int(l.len) > LOG_COLS || l.color > 15 {

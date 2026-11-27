@@ -22,7 +22,7 @@ main :: proc() {
 @(export)
 platform_start :: proc "c" (seed_hi, seed_lo: i32) {
 	context = runtime.default_context()
-	game.init_game(&state.rules, u64(u32(seed_hi)) << 32 | u64(u32(seed_lo)))
+	game.init_tutorial(&state.rules, u64(u32(seed_hi)) << 32 | u64(u32(seed_lo))) // a first visit gets the tutorial; a save replaces it
 	state.dirty = true
 }
 

@@ -25,23 +25,43 @@ Cell :: struct {
 	health:   u8, // scarecrow: the weather wears it down; at 0 it falls apart
 }
 
-// What the player has in hand: a farmer to hire or a crop to plant.
+// What the player has in hand: a farmer to hire, a scarecrow, manure, or a crop to plant. The crops
+// follow in Crop order (the license ladder).
 Tool :: enum u8 {
 	Farmer,
-	Carrot,
-	Wheat,
-	Cabbage,
-	Corn,
-	Pumpkin,
 	Scarecrow,
 	Manure,
+	Carrot,
+	Radish,
+	Peas,
+	Wheat,
+	Onion,
+	Cabbage,
+	Potato,
+	Corn,
+	Tomato,
+	Pumpkin,
 }
 
+#assert(int(max(Tool)) - int(Tool.Carrot) == int(max(Crop)))
+
 tool_crop :: proc(t: Tool) -> (Crop, bool) {
-	if t == .Farmer || t == .Scarecrow || t == .Manure {
+	if t < .Carrot {
 		return .Carrot, false
 	}
-	return Crop(u8(t) - 1), true
+	return Crop(u8(t) - u8(Tool.Carrot)), true
+}
+
+crop_tool :: proc(c: Crop) -> Tool {
+	return Tool(u8(Tool.Carrot) + u8(c))
+}
+
+// The tabs of the right-hand panel.
+Panel :: enum u8 {
+	Farm,
+	Barn,
+	Stats,
+	Help,
 }
 
 // Commands from keys, gamepad and buttons. The page's C table must match this order.
@@ -58,17 +78,29 @@ Command :: enum u8 {
 	Seeds, // turn one of the selected crop back into seeds
 	End_Turn,
 	New_Farm,
-	Tool_1,
+	Tool_1, // keys 1 to 9 and 0 pick the first ten tools
 	Tool_2,
 	Tool_3,
 	Tool_4,
 	Tool_5,
 	Tool_6,
+	Tool_7,
+	Tool_8,
+	Tool_9,
+	Tool_10,
 	Expand_Barn,
 	Buy_Cat,
 	Dismiss, // let the farmhand or scarecrow under the cursor (or in hand) go
-	Tool_7,
-	Tool_8,
+	Next_Tab,
+	Prev_Tab,
+	License, // buy the license for the selected crop
+	Seed_Target_Down, // the selected crop's seed target, kept topped up from the barn
+	Seed_Target_Up,
+	Sell_Above_Down, // the selected crop's sell-above number; more than this in the barn is sold
+	Sell_Above_Up,
+	Page_Prev, // pages of the Stats and Help tabs
+	Page_Next,
+	Tutorial, // start a guided farm (twice), or skip the tutorial
 }
 
 LOG_LINES :: 4
@@ -104,7 +136,43 @@ Event :: enum u8 {
 	Fell,
 	Rotted,
 	Manured,
+	Licensed,
+	Goal, // a tutorial step done
 }
+
+// What happened to each crop, for the Stats tab.
+Crop_Stats :: struct {
+	planted:   int,
+	harvested: int,
+	sold:      int, // by hand
+	auto_sold: int, // from a full barn, or above the sell-above number
+	seeded:    int, // crops kept back as seed
+	fed:       int, // eaten by farmhands
+	rats:      int,
+	crows:     int,
+	rotted:    int,
+}
+
+Farm_Stats :: struct {
+	earned:            int,
+	spent:             int,
+	land:              int,
+	expansions:        int,
+	licenses:          int,
+	hired:             int,
+	quit:              int,
+	let_go:            int,
+	cats:              int,
+	cats_wandered:     int,
+	scarecrows:        int,
+	scarecrows_fell:   int,
+	scarecrows_down:   int,
+	manure:            int,
+}
+
+SEED_TARGET_MAX :: 99
+SELL_ABOVE_MAX :: 99
+SELL_ABOVE_OFF :: -1
 
 Game :: struct {
 	field:    [FIELD_W * FIELD_H]Cell,
@@ -117,12 +185,17 @@ Game :: struct {
 	cursor_y: int,
 	tool:     Tool,
 	confirm_new: bool, // New_Farm pressed once; a second press starts over
+	confirm_tutorial: bool, // Tutorial pressed once; a second press starts a guided farm
 	log:      [LOG_LINES]Log_Line,
 	events:   bit_set[Event],
-	// Totals for the panel.
-	harvested: int,
-	earned:    int,
-	quits:     int,
+	panel:    Panel, // the tab showing on the right
+	page:     int, // the page of the Stats or Help tab
+	tutorial: int, // the tutorial step, 1 to len(TUTORIAL); 0 when off
+	licensed:    [Crop]bool,
+	seed_target: [Crop]int, // seeds to keep in stock; topped up from the barn
+	sell_above:  [Crop]int, // more than this in the barn is sold; SELL_ABOVE_OFF never sells
+	crop_stats:  [Crop]Crop_Stats,
+	stats:       Farm_Stats,
 	land_bought: int, // squares bought so far; each costs more than the last
 	barn_level:  int, // expansions bought; each holds BARN_STEP more and draws more rats
 	cats:        int,
@@ -209,7 +282,8 @@ manure :: proc(g: ^Game, x, y: int) -> bool {
 		g.events += {.Denied}
 		return false
 	}
-	g.money -= MANURE_COST
+	spend(g, MANURE_COST)
+	g.stats.manure += 1
 	add_soil(g, x, y, MANURE_AMOUNT)
 	add(&t, "Spread manure for $")
 	add_int(&t, MANURE_COST)
@@ -227,6 +301,10 @@ init_game :: proc(g: ^Game, seed: u64 = 1) {
 	g.cursor_x = FIELD_W / 2 - 1
 	g.cursor_y = FIELD_H / 2 - 1
 	g.tool = .Carrot
+	for crop in Crop {
+		g.licensed[crop] = CROPS[crop].license == 0
+		g.sell_above[crop] = SELL_ABOVE_OFF
+	}
 	for t, i in FIELD_TERRAIN {
 		g.field[i].owned = t == .Soil
 		g.soil[i] = {.N = SOIL_MAX, .P = SOIL_MAX, .K = SOIL_MAX}
@@ -234,7 +312,25 @@ init_game :: proc(g: ^Game, seed: u64 = 1) {
 	say(g, "Welcome to the farm. Plant crops, hire farmhands, feed them.", COLOR_YELLOW)
 	say(g, "Farmhands make the crops around them grow twice as fast.", COLOR_LIGHT)
 	say(g, "Crows eat crops: scarecrows! Rats raid the barn: cats! Buy land.", COLOR_LIGHT)
-	say(g, "Crops tire the soil: rotate them, or spread manure. Ripe crops rot.", COLOR_LIGHT)
+	say(g, "Crops tire the soil: rotate them, or spread manure. Help tab: the manual.", COLOR_LIGHT)
+}
+
+// A new farm with the tutorial's goals on.
+init_tutorial :: proc(g: ^Game, seed: u64 = 1) {
+	init_game(g, seed)
+	g.tutorial = 1
+	say(g, "Tutorial: follow the goal at the bottom. Skip it in the Help tab.", COLOR_YELLOW)
+}
+
+// Money in and out, kept in the stats.
+spend :: proc(g: ^Game, amount: int) {
+	g.money -= amount
+	g.stats.spent += amount
+}
+
+earn :: proc(g: ^Game, amount: int) {
+	g.money += amount
+	g.stats.earned += amount
 }
 
 cell_at :: proc(g: ^Game, x, y: int) -> ^Cell {
@@ -382,6 +478,11 @@ dismiss :: proc(g: ^Game) -> bool {
 		kind = c.kind
 		c^ = {owned = true}
 	}
+	if kind == .Farmer {
+		g.stats.let_go += 1
+	} else {
+		g.stats.scarecrows_down += 1
+	}
 	say(g, kind == .Farmer ? "Let a farmhand go." : "Took down the scarecrow.", COLOR_ORANGE)
 	g.events += {.Dismissed}
 	return true
@@ -401,7 +502,8 @@ place_scarecrow :: proc(g: ^Game, x, y: int) -> bool {
 		g.events += {.Denied}
 		return false
 	}
-	g.money -= SCARECROW_COST
+	spend(g, SCARECROW_COST)
+	g.stats.scarecrows += 1
 	c^ = {owned = true, kind = .Scarecrow, health = SCARECROW_HEALTH}
 	add(&t, "Put up a scarecrow for $")
 	add_int(&t, SCARECROW_COST)
@@ -435,13 +537,24 @@ plant :: proc(g: ^Game, x, y: int, crop: Crop) -> bool {
 	}
 	info := CROPS[crop]
 	t: Text
+	if !g.licensed[crop] {
+		add(&t, "No license for ")
+		add(&t, info.name)
+		add(&t, " yet: L buys one for $")
+		add_int(&t, info.license)
+		add(&t, ".")
+		say(g, text_of(&t), COLOR_RED)
+		g.events += {.Denied}
+		return false
+	}
+	from_seed := g.seeds[crop] > 0
 	if g.seeds[crop] > 0 {
 		g.seeds[crop] -= 1
 		add(&t, "Planted ")
 		add(&t, info.name)
 		add(&t, " from yer own seed.")
 	} else if g.money >= info.cost {
-		g.money -= info.cost
+		spend(g, info.cost)
 		add(&t, "Bought and planted ")
 		add(&t, info.name)
 		add(&t, " for $")
@@ -458,8 +571,47 @@ plant :: proc(g: ^Game, x, y: int, crop: Crop) -> bool {
 		return false
 	}
 	c^ = {owned = true, kind = .Crop, crop = crop}
+	g.crop_stats[crop].planted += 1
 	say(g, text_of(&t), COLOR_LIME)
 	g.events += {.Planted}
+	if from_seed {
+		auto_barn(g, crop)
+	}
+	return true
+}
+
+// Buys the license to plant a crop. Any order.
+buy_license :: proc(g: ^Game, crop: Crop) -> bool {
+	info := CROPS[crop]
+	t: Text
+	if g.licensed[crop] {
+		add(&t, "Ye can already plant ")
+		add(&t, info.name)
+		add(&t, ".")
+		say(g, text_of(&t), COLOR_LIGHT)
+		g.events += {.Denied}
+		return false
+	}
+	if g.money < info.license {
+		add(&t, "A license for ")
+		add(&t, info.name)
+		add(&t, " costs $")
+		add_int(&t, info.license)
+		add(&t, ".")
+		say(g, text_of(&t), COLOR_RED)
+		g.events += {.Denied}
+		return false
+	}
+	spend(g, info.license)
+	g.licensed[crop] = true
+	g.stats.licenses += 1
+	add(&t, "Bought a license for ")
+	add(&t, info.name)
+	add(&t, " for $")
+	add_int(&t, info.license)
+	add(&t, ". Plant away.")
+	say(g, text_of(&t), COLOR_CYAN)
+	g.events += {.Licensed}
 	return true
 }
 
@@ -477,7 +629,8 @@ hire :: proc(g: ^Game, x, y: int) -> bool {
 		g.events += {.Denied}
 		return false
 	}
-	g.money -= FARMER_COST
+	spend(g, FARMER_COST)
+	g.stats.hired += 1
 	c^ = {owned = true, kind = .Farmer, fed = true}
 	t: Text
 	add(&t, "Hired a farmhand for $")
@@ -493,28 +646,109 @@ harvest :: proc(g: ^Game, x, y: int) -> bool {
 	if !ripe(c^) {
 		return false
 	}
-	g.harvested += 1
-	info := CROPS[c.crop]
-	t: Text
-	if barn_count(g) >= barn_capacity(g) {
-		g.money += info.price
-		g.earned += info.price
-		add(&t, "Barn full: sold the ")
-		add(&t, info.name)
-		add(&t, " for $")
-		add_int(&t, info.price)
-		add(&t, ".")
-		g.events += {.Sold}
-	} else {
-		g.barn[c.crop] += 1
-		add(&t, "Harvested ")
-		add(&t, info.name)
-		add(&t, " into the barn.")
-	}
-	say(g, text_of(&t), COLOR_YELLOW)
-	pay_soil(g, x, y, c.crop)
+	crop := c.crop
+	info := CROPS[crop]
+	g.crop_stats[crop].harvested += 1
+	pay_soil(g, x, y, crop)
 	c^ = {owned = true}
 	g.events += {.Harvested}
+	// Into the barn, then the seed and sell rules; a barn still over full sells this one.
+	g.barn[crop] += 1
+	t: Text
+	add(&t, "Harvested ")
+	add(&t, info.name)
+	add(&t, " into the barn.")
+	say(g, text_of(&t), COLOR_YELLOW)
+	auto_barn(g, crop)
+	if barn_count(g) > barn_capacity(g) && g.barn[crop] > 0 {
+		g.barn[crop] -= 1
+		earn(g, info.price)
+		g.crop_stats[crop].auto_sold += 1
+		t2: Text
+		add(&t2, "Barn full: sold the ")
+		add(&t2, info.name)
+		add(&t2, " for $")
+		add_int(&t2, info.price)
+		add(&t2, ".")
+		say(g, text_of(&t2), COLOR_YELLOW)
+		g.events += {.Sold}
+	}
+	return true
+}
+
+// The seed and sell rules for one crop: keep seeds topped up to the target from the barn, then sell
+// whatever is over the sell-above number. One log line says what it did.
+auto_barn :: proc(g: ^Game, crop: Crop) {
+	info := CROPS[crop]
+	kept := 0
+	for g.seeds[crop] < g.seed_target[crop] && g.barn[crop] > 0 {
+		g.barn[crop] -= 1
+		g.seeds[crop] += info.seeds
+		g.crop_stats[crop].seeded += 1
+		kept += 1
+	}
+	sold := 0
+	if g.sell_above[crop] != SELL_ABOVE_OFF && g.barn[crop] > g.sell_above[crop] {
+		sold = g.barn[crop] - g.sell_above[crop]
+		g.barn[crop] -= sold
+		earn(g, sold * info.price)
+		g.crop_stats[crop].auto_sold += sold
+	}
+	if kept == 0 && sold == 0 {
+		return
+	}
+	t: Text
+	add(&t, info.name)
+	add(&t, ":")
+	if kept > 0 {
+		add(&t, " kept ")
+		add_int(&t, kept)
+		add(&t, " for seed (")
+		add_int(&t, g.seeds[crop])
+		add(&t, " seeds)")
+		g.events += {.Seeded}
+	}
+	if sold > 0 {
+		add(&t, kept > 0 ? ", sold " : " sold ")
+		add_int(&t, sold)
+		add(&t, " over ")
+		add_int(&t, g.sell_above[crop])
+		add(&t, " for $")
+		add_int(&t, sold * info.price)
+		g.events += {.Sold}
+	}
+	add(&t, ".")
+	say(g, text_of(&t), COLOR_LIME)
+}
+
+// Changes the selected crop's seed target or sell-above number by d, then applies the rules.
+set_rule :: proc(g: ^Game, seed: bool, d: int) -> bool {
+	crop, ok := tool_crop(g.tool)
+	if !ok {
+		say(g, "Pick a crop first to set its seed and sell rules.", COLOR_RED)
+		g.events += {.Denied}
+		return false
+	}
+	t: Text
+	add(&t, CROPS[crop].name)
+	if seed {
+		g.seed_target[crop] = clamp(g.seed_target[crop] + d, 0, SEED_TARGET_MAX)
+		add(&t, ": keep ")
+		add_int(&t, g.seed_target[crop])
+		add(&t, g.seed_target[crop] == 1 ? " seed in stock." : " seeds in stock.")
+	} else {
+		g.sell_above[crop] = clamp(g.sell_above[crop] + d, SELL_ABOVE_OFF, SELL_ABOVE_MAX)
+		if g.sell_above[crop] == SELL_ABOVE_OFF {
+			add(&t, ": never sold on its own.")
+		} else {
+			add(&t, ": sell any over ")
+			add_int(&t, g.sell_above[crop])
+			add(&t, " in the barn.")
+		}
+	}
+	say(g, text_of(&t), COLOR_LIGHT)
+	g.events += {.Moved}
+	auto_barn(g, crop)
 	return true
 }
 
@@ -571,8 +805,9 @@ expand_barn :: proc(g: ^Game) -> bool {
 		g.events += {.Denied}
 		return false
 	}
-	g.money -= price
+	spend(g, price)
 	g.barn_level += 1
+	g.stats.expansions += 1
 	add(&t, "Built the barn bigger for $")
 	add_int(&t, price)
 	add(&t, ": holds ")
@@ -595,8 +830,9 @@ buy_cat :: proc(g: ^Game) -> bool {
 		g.events += {.Denied}
 		return false
 	}
-	g.money -= CAT_COST
+	spend(g, CAT_COST)
 	g.cats += 1
+	g.stats.cats += 1
 	add(&t, "Got a cat for $")
 	add_int(&t, CAT_COST)
 	add(&t, ". Rats ")
@@ -613,6 +849,7 @@ rats_feast :: proc(g: ^Game) -> int {
 	for crop in Crop {
 		n := (g.barn[crop] + 1) / 2
 		g.barn[crop] -= n
+		g.crop_stats[crop].rats += n
 		eaten += n
 	}
 	g.pantry /= 2
@@ -650,8 +887,9 @@ buy_land :: proc(g: ^Game, x, y: int) -> bool {
 		g.events += {.Denied}
 		return false
 	}
-	g.money -= price
+	spend(g, price)
 	g.land_bought += 1
+	g.stats.land += 1
 	cell_at(g, x, y)^ = {owned = true}
 	add(&t, "Bought the land for $")
 	add_int(&t, price)
@@ -677,8 +915,8 @@ sell :: proc(g: ^Game, crop: Crop, n: int) -> bool {
 		return false
 	}
 	g.barn[crop] -= count
-	g.money += count * info.price
-	g.earned += count * info.price
+	earn(g, count * info.price)
+	g.crop_stats[crop].sold += count
 	t: Text
 	add(&t, "Sold ")
 	add_int(&t, count)
@@ -706,6 +944,7 @@ make_seeds :: proc(g: ^Game, crop: Crop) -> bool {
 	}
 	g.barn[crop] -= 1
 	g.seeds[crop] += info.seeds
+	g.crop_stats[crop].seeded += 1
 	t: Text
 	add(&t, "Kept a ")
 	add(&t, info.name)
@@ -746,6 +985,7 @@ eat_meal :: proc(g: ^Game) -> bool {
 		}
 		g.barn[best] -= 1
 		g.pantry += CROPS[best].food
+		g.crop_stats[best].fed += 1
 	}
 	g.pantry -= 1
 	return true
@@ -824,6 +1064,7 @@ end_turn :: proc(g: ^Game) {
 		}
 	}
 	g.cats -= wandered
+	g.stats.cats_wandered += wandered
 	// Then the crows, at every crop no scarecrow guards.
 	crowed, crowed_crop := 0, Crop.Carrot
 	for y in 0 ..< FIELD_H {
@@ -835,6 +1076,7 @@ end_turn :: proc(g: ^Game) {
 			if rng_int(&g.rng, 100) < CROW_PERCENT {
 				crowed += 1
 				crowed_crop = c.crop
+				g.crop_stats[c.crop].crows += 1
 				c^ = {owned = true}
 			}
 		}
@@ -849,6 +1091,7 @@ end_turn :: proc(g: ^Game) {
 		if int(c.health) <= wear {
 			c = {owned = true}
 			fell += 1
+			g.stats.scarecrows_fell += 1
 		} else {
 			c.health -= u8(wear)
 		}
@@ -867,6 +1110,7 @@ end_turn :: proc(g: ^Game) {
 				if int(c.rot) >= CROPS[c.crop].keep {
 					rotted += 1
 					rotted_crop = c.crop
+					g.crop_stats[c.crop].rotted += 1
 					pay_soil(g, x, y, c.crop)
 					add_soil(g, x, y, COMPOST)
 					c^ = {owned = true}
@@ -884,7 +1128,7 @@ end_turn :: proc(g: ^Game) {
 		}
 	}
 	g.turn += 1
-	g.quits += quit
+	g.stats.quit += quit
 	g.events += {.Turned}
 	t: Text
 	add(&t, "Turn ")
@@ -977,6 +1221,9 @@ command :: proc(g: ^Game, c: Command) {
 	if c != .New_Farm {
 		g.confirm_new = false
 	}
+	if c != .Tutorial {
+		g.confirm_tutorial = false
+	}
 	switch c {
 	case .North:
 		move_cursor(g, 0, -1)
@@ -997,9 +1244,9 @@ command :: proc(g: ^Game, c: Command) {
 	case .Sell, .Sell_All, .Seeds:
 		crop, ok := tool_crop(g.tool)
 		if !ok {
-			say(g, "Pick a crop first (2 to 6) to sell it or keep it for seed.", COLOR_RED)
+			say(g, "Pick a crop first to sell it or keep it for seed.", COLOR_RED)
 			g.events += {.Denied}
-			return
+			break
 		}
 		#partial switch c {
 		case .Sell:
@@ -1015,12 +1262,12 @@ command :: proc(g: ^Game, c: Command) {
 		if g.confirm_new {
 			init_game(g, rng_next(&g.rng))
 			g.events += {.Turned}
-		} else {
-			g.confirm_new = true
-			say(g, "Start a new farm? Press New again to confirm.", COLOR_ORANGE)
-			g.events += {.Moved}
+			return
 		}
-	case .Tool_1, .Tool_2, .Tool_3, .Tool_4, .Tool_5, .Tool_6:
+		g.confirm_new = true
+		say(g, "Start a new farm? Press New again to confirm.", COLOR_ORANGE)
+		g.events += {.Moved}
+	case .Tool_1, .Tool_2, .Tool_3, .Tool_4, .Tool_5, .Tool_6, .Tool_7, .Tool_8, .Tool_9, .Tool_10:
 		g.tool = Tool(u8(c) - u8(Command.Tool_1))
 		g.events += {.Moved}
 	case .Expand_Barn:
@@ -1029,13 +1276,69 @@ command :: proc(g: ^Game, c: Command) {
 		buy_cat(g)
 	case .Dismiss:
 		dismiss(g)
-	case .Tool_7:
-		g.tool = .Scarecrow
-		g.events += {.Moved}
-	case .Tool_8:
-		g.tool = .Manure
-		g.events += {.Moved}
+	case .Next_Tab:
+		show_panel(g, Panel((int(g.panel) + 1) % len(Panel)))
+	case .Prev_Tab:
+		show_panel(g, Panel((int(g.panel) + len(Panel) - 1) % len(Panel)))
+	case .License:
+		crop, ok := tool_crop(g.tool)
+		if !ok {
+			say(g, "Pick a crop first to buy its license.", COLOR_RED)
+			g.events += {.Denied}
+			break
+		}
+		buy_license(g, crop)
+	case .Seed_Target_Down:
+		set_rule(g, true, -1)
+	case .Seed_Target_Up:
+		set_rule(g, true, 1)
+	case .Sell_Above_Down:
+		set_rule(g, false, -1)
+	case .Sell_Above_Up:
+		set_rule(g, false, 1)
+	case .Page_Prev:
+		turn_page(g, -1)
+	case .Page_Next:
+		turn_page(g, 1)
+	case .Tutorial:
+		if g.tutorial > 0 {
+			g.tutorial = 0
+			say(g, "Tutorial skipped. The Help tab has the manual.", COLOR_ORANGE)
+			g.events += {.Moved}
+		} else if g.confirm_tutorial {
+			init_tutorial(g, rng_next(&g.rng))
+			g.events += {.Turned}
+			return
+		} else {
+			g.confirm_tutorial = true
+			say(g, "Start a new farm with the tutorial? Press Tutorial again to confirm.", COLOR_ORANGE)
+			g.events += {.Moved}
+		}
 	}
+	tutorial_check(g)
+}
+
+show_panel :: proc(g: ^Game, p: Panel) {
+	g.panel = p
+	g.page = 0
+	g.events += {.Moved}
+}
+
+// Pages in the Stats and Help tabs; the other tabs have one.
+page_count :: proc(p: Panel) -> int {
+	#partial switch p {
+	case .Stats:
+		return STATS_PAGES
+	case .Help:
+		return len(HELP)
+	}
+	return 1
+}
+
+turn_page :: proc(g: ^Game, d: int) {
+	n := page_count(g.panel)
+	g.page = (g.page + d + n) % n
+	g.events += {.Moved}
 }
 
 move_cursor :: proc(g: ^Game, dx, dy: int) {
